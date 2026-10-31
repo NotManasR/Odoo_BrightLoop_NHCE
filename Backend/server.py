@@ -460,7 +460,40 @@ def get_dashboard():
         "collected_payments_count": collected_payments,
         "overdue_balance": overdue_balance
     })
+@app.route('/api/products', methods=['POST'])
+def create_product():
+    data = request.json or {}
 
+    name = (data.get('name') or '').strip()
+    ptype = data.get('type')
+    notes = data.get('notes')
+
+    try:
+        sales_price = float(data.get('sales_price'))
+        cost_price = data.get('cost_price')
+        cost_price = float(cost_price) if cost_price not in (None, '') else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "Prices must be numbers"}), 400
+
+    if not name:
+        return jsonify({"error": "Product name is required"}), 400
+    if sales_price < 0 or (cost_price is not None and cost_price < 0):
+        return jsonify({"error": "Prices cannot be negative"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO products (name, type, sales_price, cost_price, notes)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING *
+    """, (name, ptype, sales_price, cost_price, notes))
+    product = cursor.fetchone()
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+    return jsonify(product), 201
 
 # ============================================================
 # RUN FLASK APPLICATION
@@ -476,3 +509,4 @@ if __name__ == '__main__':
         port=5000,
         debug=True
     )
+
