@@ -1,8 +1,10 @@
+import io
 import re
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import generate_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from fpdf import FPDF
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import datetime
@@ -53,7 +55,7 @@ def signup():
             or not re.search(r'[^A-Za-z0-9]', password)):
         return jsonify({"error": "Password must be more than 8 characters with an uppercase letter, a lowercase letter and a special character"}), 400
 
-    password_hash = generate_password_hash(password,method='pbkdf2:sha256')
+    password_hash = generate_password_hash(password)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -75,41 +77,6 @@ def signup():
         conn.close()
 
     return jsonify(user), 201
-@app.route('/api/login', methods=['POST'])
-def login():
-    data = request.json or {}
-
-    identifier = (data.get('username') or data.get('email') or '').strip()
-    password = data.get('password') or ''
-
-    if not identifier or not password:
-        return jsonify({"error": "Enter your email or username and password"}), 400
-
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, name, email, password_hash, role
-        FROM users
-        WHERE LOWER(email) = LOWER(%s) OR LOWER(name) = LOWER(%s)
-    """, (identifier, identifier))
-    user = cursor.fetchone()
-    cursor.close()
-    conn.close()
-
-    if not user or not check_password_hash(user['password_hash'], password):
-        return jsonify({"error": "Invalid email/username or password"}), 401
-
-    token = serializer.dumps({"user_id": user['id'], "role": user['role']})
-
-    return jsonify({
-        "token": token,
-        "user": {
-            "id": user['id'],
-            "name": user['name'],
-            "email": user['email'],
-            "role": user['role']
-        }
-    })
 
 
 # ============================================================
@@ -138,7 +105,7 @@ def forgot_password():
 
     # Token is valid for 1 hour (checked when it is used)
     token = serializer.dumps(email, salt='password-reset-salt')
-    reset_url = f"{request.host_url}reset_password.html?token={token}"
+    reset_url = f"{request.host_url}reset-password.html?token={token}"
 
     # In production, send via SMTP. For local testing/demo, print to console
     print(f"[RESET LINK FOR {email}]: {reset_url}")
@@ -383,120 +350,204 @@ def transition_subscription():
 
 
 # ============================================================
-# 5. RUN BILLING CYCLE
+# 5. PRICING ENGINE + RUN BILLING CYCLE
 # ============================================================
+
+def compute_line_totals(cursor, product_id, tax_id, quantity, unit_price):
+    """
+    Calculates subtotal, tax, discount and total for ONE subscription line
+    using the rules stored in the `taxes` and `discounts` tables.
+    """
+    subtotal = float(quantity) * float(unit_price)
+    today = datetime.date.today()
+
+    # 1. TAX: use the tax rate linked to this line (if any)
+    total_tax = 0.0
+    if tax_id:
+        cursor.execute("SELECT percentage FROM taxes WHERE id = %s", (tax_id,))
+        tax_row = cursor.fetchone()
+        if tax_row:
+            total_tax = subtotal * (float(tax_row['percentage']) / 100.0)
+
+    # 2. DISCOUNTS: rules for this product, or rules that apply to all products
+    cursor.execute("""
+        SELECT * FROM discounts
+        WHERE product_id IS NULL OR product_id = %s
+    """, (product_id,))
+    discount_rules = cursor.fetchall()
+
+    total_discount = 0.0
+    used_rule_ids = []
+
+    for d in discount_rules:
+        # Date window
+        if d.get('start_date') and d['start_date'] > today:
+            continue
+        if d.get('end_date') and d['end_date'] < today:
+            continue
+
+        # Usage limit
+        if d.get('usage_limit') is not None and (d.get('times_used') or 0) >= d['usage_limit']:
+            continue
+
+        # Minimum purchase amount and minimum quantity
+        if d.get('min_purchase') and subtotal < float(d['min_purchase']):
+            continue
+        if d.get('min_quantity') and quantity < d['min_quantity']:
+            continue
+
+        # Discount amount
+        if d['discount_type'] == 'percent':
+            disc_amt = subtotal * (float(d['discount_value']) / 100.0)
+        else:  # 'fixed'
+            disc_amt = float(d['discount_value'])
+
+        total_discount += disc_amt
+        used_rule_ids.append(d['id'])
+
+    # A discount can never be larger than the line itself
+    total_discount = min(total_discount, subtotal)
+
+    final_total = subtotal - total_discount + total_tax
+
+    return {
+        "subtotal": round(subtotal, 2),
+        "tax_amount": round(total_tax, 2),
+        "discount_amount": round(total_discount, 2),
+        "total_amount": round(final_total, 2),
+        "used_rule_ids": used_rule_ids
+    }
+
 
 @app.route('/api/billing/run', methods=['POST'])
 def run_billing():
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT s.*
-        FROM subscriptions s
-        WHERE s.status = 'Active'
-        AND s.id NOT IN (
-            SELECT subscription_id
-            FROM invoices
-            WHERE subscription_id IS NOT NULL
-        )
-    """)
-
-    active_subs = cursor.fetchall()
-
-    generated_invoices = []
-
-    for sub in active_subs:
-
+    try:
+        # Active subscriptions that do not have an invoice yet
         cursor.execute("""
-            SELECT *
-            FROM subscription_lines
-            WHERE subscription_id = %s
-        """, (sub['id'],))
-
-        lines = cursor.fetchall()
-
-        subtotal = float(
-            sum(l['quantity'] * l['unit_price'] for l in lines)
-        )
-
-        total_qty = sum(
-            l['quantity'] for l in lines
-        )
-
-        # Calculate 10% tax
-        tax_total = subtotal * 0.10
-
-        # Apply 10% discount if quantity >= 5
-        discount_total = (
-            subtotal * 0.10
-            if total_qty >= 5
-            else 0.0
-        )
-
-        total_amount = subtotal + tax_total - discount_total
-
-        inv_num = f"INV-{sub['subscription_number']}"
-
-        cursor.execute("""
-            INSERT INTO invoices (
-                invoice_number,
-                subscription_id,
-                customer_id,
-                status,
-                due_date,
-                subtotal,
-                tax_total,
-                discount_total,
-                total_amount
+            SELECT s.*
+            FROM subscriptions s
+            WHERE s.status = 'Active'
+            AND s.id NOT IN (
+                SELECT subscription_id
+                FROM invoices
+                WHERE subscription_id IS NOT NULL
             )
-            VALUES (
-                %s, %s, %s, 'Confirmed',
-                CURRENT_DATE + INTERVAL '15 days',
-                %s, %s, %s, %s
-            )
-            RETURNING id
-        """, (
-            inv_num,
-            sub['id'],
-            sub['customer_id'],
-            subtotal,
-            tax_total,
-            discount_total,
-            total_amount
-        ))
+        """)
 
-        inv_id = cursor.fetchone()['id']
+        active_subs = cursor.fetchall()
 
-        for l in lines:
+        generated_invoices = []
 
-            line_price = float(
-                l['quantity'] * l['unit_price']
-            )
+        for sub in active_subs:
 
             cursor.execute("""
-                INSERT INTO invoice_lines (
-                    invoice_id,
-                    quantity,
-                    price,
-                    tax_amount,
-                    discount_amount
+                SELECT *
+                FROM subscription_lines
+                WHERE subscription_id = %s
+            """, (sub['id'],))
+
+            lines = cursor.fetchall()
+
+            inv_subtotal = 0.0
+            inv_tax = 0.0
+            inv_discount = 0.0
+            inv_total = 0.0
+            invoice_lines_data = []
+            rule_ids_to_count = []
+
+            for line in lines:
+                calc = compute_line_totals(
+                    cursor,
+                    line['product_id'],
+                    line['tax_id'],
+                    line['quantity'],
+                    line['unit_price']
                 )
-                VALUES (%s, %s, %s, %s, %s)
+
+                inv_subtotal += calc['subtotal']
+                inv_tax += calc['tax_amount']
+                inv_discount += calc['discount_amount']
+                inv_total += calc['total_amount']
+                rule_ids_to_count.extend(calc['used_rule_ids'])
+
+                invoice_lines_data.append({
+                    'quantity': line['quantity'],
+                    'price': calc['subtotal'],
+                    'tax': calc['tax_amount'],
+                    'discount': calc['discount_amount']
+                })
+
+            inv_num = f"INV-{sub['subscription_number']}"
+
+            cursor.execute("""
+                INSERT INTO invoices (
+                    invoice_number,
+                    subscription_id,
+                    customer_id,
+                    status,
+                    due_date,
+                    subtotal,
+                    tax_total,
+                    discount_total,
+                    total_amount
+                )
+                VALUES (
+                    %s, %s, %s, 'Confirmed',
+                    CURRENT_DATE + INTERVAL '15 days',
+                    %s, %s, %s, %s
+                )
+                RETURNING id
             """, (
-                inv_id,
-                l['quantity'],
-                line_price,
-                line_price * 0.10,
-                (line_price * 0.10) if total_qty >= 5 else 0.0
+                inv_num,
+                sub['id'],
+                sub['customer_id'],
+                round(inv_subtotal, 2),
+                round(inv_tax, 2),
+                round(inv_discount, 2),
+                round(inv_total, 2)
             ))
 
-        generated_invoices.append(inv_num)
+            inv_id = cursor.fetchone()['id']
 
-    conn.commit()
+            for il in invoice_lines_data:
+                cursor.execute("""
+                    INSERT INTO invoice_lines (
+                        invoice_id,
+                        quantity,
+                        price,
+                        tax_amount,
+                        discount_amount
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    inv_id,
+                    il['quantity'],
+                    il['price'],
+                    il['tax'],
+                    il['discount']
+                ))
 
-    cursor.close()
-    conn.close()
+            # Count each discount rule once per invoice it was used on
+            for rule_id in set(rule_ids_to_count):
+                cursor.execute("""
+                    UPDATE discounts
+                    SET times_used = COALESCE(times_used, 0) + 1
+                    WHERE id = %s
+                """, (rule_id,))
+
+            generated_invoices.append(inv_num)
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
 
     return jsonify({
         "message": (
@@ -547,6 +598,168 @@ def get_invoices():
     conn.close()
 
     return jsonify(invoices), 200
+
+
+# ============================================================
+# 6b. INVOICE DETAIL + PDF EXPORT
+# ============================================================
+
+class InvoicePDF(FPDF):
+    def header(self):
+        self.set_font('Helvetica', 'B', 16)
+        self.cell(0, 10, 'BRIGHTLOOP SOFTWARE',
+                  new_x="LMARGIN", new_y="NEXT", align='L')
+        self.set_font('Helvetica', '', 10)
+        self.cell(0, 5, 'Subscription & Billing Invoice',
+                  new_x="LMARGIN", new_y="NEXT", align='L')
+        self.ln(10)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Helvetica', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', align='C')
+
+
+def _pdf_safe(value):
+    """Helvetica only supports Latin-1, so replace anything else with '?'."""
+    return str(value if value is not None else '-').encode(
+        'latin-1', 'replace'
+    ).decode('latin-1')
+
+
+def _load_invoice(invoice_id):
+    """Return (invoice, lines), or (None, None) if missing or not allowed."""
+    role = request.headers.get('X-User-Role', 'Customer')
+    user_id = request.headers.get('X-User-Id')
+    is_staff = role in ['Admin', 'Staff']
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT
+                i.*,
+                u.email AS customer_email,
+                u.name AS customer_name,
+                s.subscription_number
+            FROM invoices i
+            JOIN users u ON i.customer_id = u.id
+            LEFT JOIN subscriptions s ON i.subscription_id = s.id
+            WHERE i.id = %s
+        """, (invoice_id,))
+        inv = cursor.fetchone()
+
+        if not inv:
+            return None, None
+        # Customers can only open their own invoices
+        if not is_staff and str(inv['customer_id']) != str(user_id):
+            return None, None
+
+        cursor.execute(
+            "SELECT * FROM invoice_lines WHERE invoice_id = %s ORDER BY id",
+            (invoice_id,)
+        )
+        lines = [dict(l) for l in cursor.fetchall()]
+        return dict(inv), lines
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/api/invoices/<int:invoice_id>', methods=['GET'])
+def get_invoice_detail(invoice_id):
+    inv, lines = _load_invoice(invoice_id)
+    if inv is None:
+        return jsonify({"error": "Invoice not found"}), 404
+
+    inv['lines'] = lines
+    return jsonify(inv), 200
+
+
+@app.route('/api/invoices/<int:invoice_id>/pdf', methods=['GET'])
+def invoice_pdf(invoice_id):
+    inv, lines = _load_invoice(invoice_id)
+    if inv is None:
+        return jsonify({"error": "Invoice not found"}), 404
+
+    customer = inv['customer_name'] or inv['customer_email']
+
+    pdf = InvoicePDF(format='A4')
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+
+    # ---- Invoice details ----
+    pdf.set_font('Helvetica', 'B', 13)
+    pdf.cell(0, 8, _pdf_safe(f"Invoice {inv['invoice_number']}"),
+             new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font('Helvetica', '', 10)
+    details = [
+        f"Customer: {customer} ({inv['customer_email']})",
+        f"Subscription: {inv['subscription_number'] or '-'}",
+        f"Status: {inv['status']}",
+        f"Due date: {inv['due_date']}",
+    ]
+    for line in details:
+        pdf.cell(0, 6, _pdf_safe(line), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(8)
+
+    # ---- Line items table (widths add up to 190 mm) ----
+    widths = [15, 25, 35, 35, 35, 45]
+    headers = ['#', 'Qty', 'Price', 'Tax', 'Discount', 'Line total']
+
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_fill_color(230, 230, 230)
+    for w, h in zip(widths, headers):
+        pdf.cell(w, 8, h, border=1, align='C', fill=True,
+                 new_x="RIGHT", new_y="TOP")
+    pdf.ln(8)
+
+    pdf.set_font('Helvetica', '', 10)
+    for n, l in enumerate(lines, start=1):
+        line_total = l['price'] + l['tax_amount'] - l['discount_amount']
+        cells = [
+            str(n),
+            str(l['quantity']),
+            f"{l['price']:.2f}",
+            f"{l['tax_amount']:.2f}",
+            f"{l['discount_amount']:.2f}",
+            f"{line_total:.2f}",
+        ]
+        for w, text in zip(widths, cells):
+            pdf.cell(w, 8, text, border=1, align='R',
+                     new_x="RIGHT", new_y="TOP")
+        pdf.ln(8)
+
+    pdf.ln(6)
+
+    # ---- Totals ----
+    totals = [
+        ('Subtotal', f"{inv['subtotal']:.2f}"),
+        ('Tax', f"{inv['tax_total']:.2f}"),
+        ('Discount', f"-{inv['discount_total']:.2f}"),
+    ]
+    pdf.set_font('Helvetica', '', 11)
+    for label, value in totals:
+        pdf.cell(130, 7, '', new_x="RIGHT", new_y="TOP")
+        pdf.cell(30, 7, label, align='L', new_x="RIGHT", new_y="TOP")
+        pdf.cell(30, 7, value, align='R', new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font('Helvetica', 'B', 12)
+    pdf.cell(130, 9, '', new_x="RIGHT", new_y="TOP")
+    pdf.cell(30, 9, 'Total', border='T', align='L',
+             new_x="RIGHT", new_y="TOP")
+    pdf.cell(30, 9, f"{inv['total_amount']:.2f}", border='T', align='R',
+             new_x="LMARGIN", new_y="NEXT")
+
+    buffer = io.BytesIO(bytes(pdf.output()))
+
+    return send_file(
+        buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f"{inv['invoice_number']}.pdf"
+    )
 
 
 # ============================================================
@@ -699,6 +912,184 @@ def create_product():
     conn.close()
 
     return jsonify(product), 201
+
+
+# ============================================================
+# 10. ADMIN CATALOG & RULE MANAGEMENT
+# ============================================================
+
+def _none_if_empty(value):
+    """Turn empty strings into None so DATE/INT columns accept them."""
+    return None if value in ('', None) else value
+
+
+def _pick(data, *keys, default=None):
+    """Return the first key present in the request body (supports aliases)."""
+    for key in keys:
+        if key in data:
+            return data[key]
+    return default
+
+
+def _admin_list(table):
+    # `table` is always a fixed name from this file, never user input
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT * FROM {table} ORDER BY id DESC")
+    rows = [dict(row) for row in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+    return jsonify(rows), 200
+
+
+def _admin_insert(query, params, label):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(query, params)
+        new_id = cursor.fetchone()['id']
+        conn.commit()
+    except (psycopg2.errors.CheckViolation,
+            psycopg2.errors.NotNullViolation,
+            psycopg2.errors.ForeignKeyViolation,
+            psycopg2.DataError):
+        conn.rollback()
+        return jsonify({"error": f"Invalid data for {label.lower()}"}), 400
+    finally:
+        cursor.close()
+        conn.close()
+    return jsonify({"message": f"{label} created", "id": new_id}), 201
+
+
+@app.route('/api/admin/products', methods=['GET', 'POST'])
+def manage_products():
+    if request.method == 'GET':
+        return _admin_list('products')
+
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "Product name is required"}), 400
+
+    return _admin_insert("""
+        INSERT INTO products (name, type, sales_price, cost_price, notes)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        name,
+        data.get('type', 'Service'),
+        data.get('sales_price', 0),
+        _none_if_empty(data.get('cost_price', 0)),
+        data.get('notes', '')
+    ), "Product")
+
+
+@app.route('/api/admin/product-variants', methods=['POST'])
+def create_product_variant():
+    data = request.json or {}
+    variant_name = (data.get('variant_name') or '').strip()
+
+    if not data.get('product_id') or not variant_name:
+        return jsonify({"error": "product_id and variant_name are required"}), 400
+
+    return _admin_insert("""
+        INSERT INTO product_variants (product_id, variant_name, extra_price)
+        VALUES (%s, %s, %s)
+        RETURNING id
+    """, (
+        data.get('product_id'),
+        variant_name,
+        data.get('extra_price', 0)
+    ), "Variant")
+
+
+@app.route('/api/admin/plans', methods=['GET', 'POST'])
+def manage_plans():
+    if request.method == 'GET':
+        return _admin_list('plans')
+
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "Plan name is required"}), 400
+
+    # Database only allows: Daily, Weekly, Monthly, Yearly
+    billing_period = str(data.get('billing_period', 'Monthly')).strip().capitalize()
+    if billing_period not in ('Daily', 'Weekly', 'Monthly', 'Yearly'):
+        return jsonify({
+            "error": "billing_period must be Daily, Weekly, Monthly or Yearly"
+        }), 400
+
+    return _admin_insert("""
+        INSERT INTO plans (
+            name, price, billing_period, min_quantity,
+            available_start_date, available_end_date,
+            is_closable, is_pausable, is_renewable
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        name,
+        data.get('price', 0),
+        billing_period,
+        data.get('min_quantity', 1),
+        _none_if_empty(_pick(data, 'available_start_date', 'start_date')),
+        _none_if_empty(_pick(data, 'available_end_date', 'end_date')),
+        _pick(data, 'is_closable', 'closable_flag', default=True),
+        _pick(data, 'is_pausable', 'pausable_flag', default=True),
+        _pick(data, 'is_renewable', 'renewable_flag', default=True)
+    ), "Plan")
+
+
+@app.route('/api/admin/taxes', methods=['GET', 'POST'])
+def manage_taxes():
+    if request.method == 'GET':
+        return _admin_list('taxes')
+
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "Tax name is required"}), 400
+
+    return _admin_insert("""
+        INSERT INTO taxes (name, percentage)
+        VALUES (%s, %s)
+        RETURNING id
+    """, (name, data.get('percentage', 0)), "Tax rule")
+
+
+@app.route('/api/admin/discounts', methods=['GET', 'POST'])
+def manage_discounts():
+    if request.method == 'GET':
+        return _admin_list('discounts')
+
+    data = request.json or {}
+
+    # Database only allows: fixed, percent ("percentage" is accepted as an alias)
+    discount_type = str(data.get('discount_type', 'percent')).strip().lower()
+    if discount_type == 'percentage':
+        discount_type = 'percent'
+    if discount_type not in ('fixed', 'percent'):
+        return jsonify({"error": "discount_type must be 'fixed' or 'percent'"}), 400
+
+    # Note: the discounts table has no `name` column, so any name is ignored
+    return _admin_insert("""
+        INSERT INTO discounts (
+            product_id, discount_type, discount_value, min_purchase,
+            min_quantity, start_date, end_date, usage_limit
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        _none_if_empty(data.get('product_id')),
+        discount_type,
+        _pick(data, 'discount_value', 'value', default=0),
+        _pick(data, 'min_purchase', 'min_amount', default=0),
+        data.get('min_quantity', 0),
+        _none_if_empty(data.get('start_date')),
+        _none_if_empty(data.get('end_date')),
+        _none_if_empty(data.get('usage_limit'))
+    ), "Discount rule")
 
 
 # ============================================================
