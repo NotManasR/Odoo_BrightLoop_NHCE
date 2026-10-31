@@ -139,6 +139,18 @@ td.act{white-space:nowrap}
 .actions.top{margin-top:16px;align-items:center}
 .taxcell small{opacity:.7}
 .plan em+em{min-height:0}
+
+/* Header: logout + profile picture */
+header{gap:16px}
+header nav{margin-left:auto}
+.header-right{display:flex;align-items:center;gap:16px;flex-shrink:0}
+header a.logout{display:inline-flex;align-items:center;height:36px;padding:0 14px}
+.header-right img{width:36px;height:36px;border-radius:50%;object-fit:cover}
+@media (max-width:760px){
+  header{flex-wrap:wrap}
+  header nav{order:3;width:100%;justify-content:flex-start;margin-left:0}
+  .header-right{margin-left:auto}
+}
 </style>
 </head>
 <body>
@@ -152,6 +164,10 @@ td.act{white-space:nowrap}
     <a href="#costs">Costs</a>
     <a href="#subscriptions">Subscriptions</a>
   </nav>
+  <div class="header-right">
+    <a class="logout" href="index.html">logout</a>
+    <img id="pfp" src="assets/pfp.png" alt="Profile picture" width="36" height="36">
+  </div>
 </header>
 
 <!-- Dashboard: same product information customers see -->
@@ -606,6 +622,13 @@ document.addEventListener("click",e=>{
   else if(act==="edit-d")editDisc(id);
   else if(act==="del-d")arm(b,()=>{BL.saveDiscountRules(BL.discountRules().filter(x=>x.id!==id));if($("#dId").value===id)resetRule();render();toast("Rule deleted.")});
 });
+
+/* Profile picture: fall back to a simple avatar if the image can't load */
+const pfp=$("#pfp");
+const avatar=()=>{pfp.src="data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><circle cx="18" cy="18" r="18" fill="#000"/><circle cx="18" cy="14" r="6" fill="#fff"/><path d="M6 31c2-7 7-9 12-9s10 2 12 9" fill="#fff"/></svg>')};
+pfp.addEventListener("error",avatar,{once:true});
+if(pfp.complete&&pfp.naturalWidth===0)avatar();
+
 ruleSummary();
 route();
 </script>
