@@ -1,5 +1,5 @@
 import re
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -75,6 +75,41 @@ def signup():
         conn.close()
 
     return jsonify(user), 201
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json or {}
+
+    identifier = (data.get('username') or data.get('email') or '').strip()
+    password = data.get('password') or ''
+
+    if not identifier or not password:
+        return jsonify({"error": "Enter your email or username and password"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, name, email, password_hash, role
+        FROM users
+        WHERE LOWER(email) = LOWER(%s) OR LOWER(name) = LOWER(%s)
+    """, (identifier, identifier))
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not user or not check_password_hash(user['password_hash'], password):
+        return jsonify({"error": "Invalid email/username or password"}), 401
+
+    token = serializer.dumps({"user_id": user['id'], "role": user['role']})
+
+    return jsonify({
+        "token": token,
+        "user": {
+            "id": user['id'],
+            "name": user['name'],
+            "email": user['email'],
+            "role": user['role']
+        }
+    })
 
 
 # ============================================================
