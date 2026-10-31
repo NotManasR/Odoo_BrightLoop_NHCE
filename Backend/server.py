@@ -5,6 +5,8 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from fpdf import FPDF
+from dateutil.relativedelta import relativedelta
+from apscheduler.schedulers.background import BackgroundScheduler
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import datetime
@@ -350,7 +352,7 @@ def transition_subscription():
 
 
 # ============================================================
-# 5. PRICING ENGINE + RUN BILLING CYCLE
+# 5. PRICING ENGINE
 # ============================================================
 
 def compute_line_totals(cursor, product_id, tax_id, quantity, unit_price):
@@ -419,129 +421,173 @@ def compute_line_totals(cursor, product_id, tax_id, quantity, unit_price):
     }
 
 
-@app.route('/api/billing/run', methods=['POST'])
-def run_billing():
-    conn = get_db()
-    cursor = conn.cursor()
+# ============================================================
+# 5b. RECURRING BILLING ENGINE
+# ============================================================
 
-    try:
-        # Active subscriptions that do not have an invoice yet
+def calculate_next_billing_date(current_date, billing_period):
+    """
+    Next billing date for a plan's period.
+    relativedelta handles month-end cases (e.g. Jan 31 -> Feb 28).
+    """
+    if isinstance(current_date, str):
+        current_date = datetime.datetime.strptime(current_date, '%Y-%m-%d').date()
+    elif isinstance(current_date, datetime.datetime):
+        current_date = current_date.date()
+
+    period = (billing_period or 'monthly').lower()
+
+    if period == 'daily':
+        return current_date + datetime.timedelta(days=1)
+    if period == 'weekly':
+        return current_date + datetime.timedelta(weeks=1)
+    if period == 'yearly':
+        return current_date + relativedelta(years=1)
+    return current_date + relativedelta(months=1)  # monthly and fallback
+
+
+def bill_due_subscriptions(cursor):
+    """
+    Invoices every Active subscription whose next_billing_date is empty
+    (never billed) or today/earlier, then moves next_billing_date forward.
+    The caller commits or rolls back. Returns the new invoice numbers.
+    """
+    today = datetime.date.today()
+
+    # FOR UPDATE SKIP LOCKED: if two runs overlap, each subscription is
+    # picked up by only one of them, so it can't be billed twice.
+    cursor.execute("""
+        SELECT s.*, p.billing_period
+        FROM subscriptions s
+        LEFT JOIN plans p ON s.plan_id = p.id
+        WHERE s.status = 'Active'
+          AND (s.next_billing_date IS NULL OR s.next_billing_date <= %s)
+        FOR UPDATE OF s SKIP LOCKED
+    """, (today,))
+    due_subs = cursor.fetchall()
+
+    generated_invoices = []
+
+    for sub in due_subs:
         cursor.execute("""
-            SELECT s.*
-            FROM subscriptions s
-            WHERE s.status = 'Active'
-            AND s.id NOT IN (
-                SELECT subscription_id
-                FROM invoices
-                WHERE subscription_id IS NOT NULL
+            SELECT *
+            FROM subscription_lines
+            WHERE subscription_id = %s
+        """, (sub['id'],))
+        lines = cursor.fetchall()
+
+        if not lines:
+            continue
+
+        bill_date = sub['next_billing_date'] or today
+
+        inv_subtotal = 0.0
+        inv_tax = 0.0
+        inv_discount = 0.0
+        inv_total = 0.0
+        invoice_lines_data = []
+        rule_ids_to_count = []
+
+        for line in lines:
+            calc = compute_line_totals(
+                cursor,
+                line['product_id'],
+                line['tax_id'],
+                line['quantity'],
+                line['unit_price']
             )
-        """)
 
-        active_subs = cursor.fetchall()
+            inv_subtotal += calc['subtotal']
+            inv_tax += calc['tax_amount']
+            inv_discount += calc['discount_amount']
+            inv_total += calc['total_amount']
+            rule_ids_to_count.extend(calc['used_rule_ids'])
 
-        generated_invoices = []
+            invoice_lines_data.append({
+                'quantity': line['quantity'],
+                'price': calc['subtotal'],
+                'tax': calc['tax_amount'],
+                'discount': calc['discount_amount']
+            })
 
-        for sub in active_subs:
+        # One invoice number per subscription per billing date
+        inv_num = f"INV-{sub['subscription_number']}-{bill_date:%Y%m%d}"
 
+        cursor.execute("""
+            INSERT INTO invoices (
+                invoice_number,
+                subscription_id,
+                customer_id,
+                status,
+                due_date,
+                subtotal,
+                tax_total,
+                discount_total,
+                total_amount
+            )
+            VALUES (
+                %s, %s, %s, 'Confirmed',
+                CURRENT_DATE + INTERVAL '15 days',
+                %s, %s, %s, %s
+            )
+            RETURNING id
+        """, (
+            inv_num,
+            sub['id'],
+            sub['customer_id'],
+            round(inv_subtotal, 2),
+            round(inv_tax, 2),
+            round(inv_discount, 2),
+            round(inv_total, 2)
+        ))
+
+        inv_id = cursor.fetchone()['id']
+
+        for il in invoice_lines_data:
             cursor.execute("""
-                SELECT *
-                FROM subscription_lines
-                WHERE subscription_id = %s
-            """, (sub['id'],))
-
-            lines = cursor.fetchall()
-
-            inv_subtotal = 0.0
-            inv_tax = 0.0
-            inv_discount = 0.0
-            inv_total = 0.0
-            invoice_lines_data = []
-            rule_ids_to_count = []
-
-            for line in lines:
-                calc = compute_line_totals(
-                    cursor,
-                    line['product_id'],
-                    line['tax_id'],
-                    line['quantity'],
-                    line['unit_price']
+                INSERT INTO invoice_lines (
+                    invoice_id,
+                    quantity,
+                    price,
+                    tax_amount,
+                    discount_amount
                 )
-
-                inv_subtotal += calc['subtotal']
-                inv_tax += calc['tax_amount']
-                inv_discount += calc['discount_amount']
-                inv_total += calc['total_amount']
-                rule_ids_to_count.extend(calc['used_rule_ids'])
-
-                invoice_lines_data.append({
-                    'quantity': line['quantity'],
-                    'price': calc['subtotal'],
-                    'tax': calc['tax_amount'],
-                    'discount': calc['discount_amount']
-                })
-
-            inv_num = f"INV-{sub['subscription_number']}"
-
-            cursor.execute("""
-                INSERT INTO invoices (
-                    invoice_number,
-                    subscription_id,
-                    customer_id,
-                    status,
-                    due_date,
-                    subtotal,
-                    tax_total,
-                    discount_total,
-                    total_amount
-                )
-                VALUES (
-                    %s, %s, %s, 'Confirmed',
-                    CURRENT_DATE + INTERVAL '15 days',
-                    %s, %s, %s, %s
-                )
-                RETURNING id
+                VALUES (%s, %s, %s, %s, %s)
             """, (
-                inv_num,
-                sub['id'],
-                sub['customer_id'],
-                round(inv_subtotal, 2),
-                round(inv_tax, 2),
-                round(inv_discount, 2),
-                round(inv_total, 2)
+                inv_id,
+                il['quantity'],
+                il['price'],
+                il['tax'],
+                il['discount']
             ))
 
-            inv_id = cursor.fetchone()['id']
+        # Count each discount rule once per invoice it was used on
+        for rule_id in set(rule_ids_to_count):
+            cursor.execute("""
+                UPDATE discounts
+                SET times_used = COALESCE(times_used, 0) + 1
+                WHERE id = %s
+            """, (rule_id,))
 
-            for il in invoice_lines_data:
-                cursor.execute("""
-                    INSERT INTO invoice_lines (
-                        invoice_id,
-                        quantity,
-                        price,
-                        tax_amount,
-                        discount_amount
-                    )
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (
-                    inv_id,
-                    il['quantity'],
-                    il['price'],
-                    il['tax'],
-                    il['discount']
-                ))
+        # Move the schedule forward so this period is never billed twice
+        next_date = calculate_next_billing_date(bill_date, sub['billing_period'])
+        cursor.execute(
+            "UPDATE subscriptions SET next_billing_date = %s WHERE id = %s",
+            (next_date, sub['id'])
+        )
 
-            # Count each discount rule once per invoice it was used on
-            for rule_id in set(rule_ids_to_count):
-                cursor.execute("""
-                    UPDATE discounts
-                    SET times_used = COALESCE(times_used, 0) + 1
-                    WHERE id = %s
-                """, (rule_id,))
+        generated_invoices.append(inv_num)
 
-            generated_invoices.append(inv_num)
+    return generated_invoices
 
+
+def process_recurring_billing_job():
+    """Opens its own connection, bills everything due, commits or rolls back."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        invoices = bill_due_subscriptions(cursor)
         conn.commit()
-
     except Exception:
         conn.rollback()
         raise
@@ -549,13 +595,46 @@ def run_billing():
         cursor.close()
         conn.close()
 
+    print(f"[{datetime.datetime.now()}] Recurring billing: "
+          f"{len(invoices)} subscription(s) billed.")
+    return invoices
+
+
+@app.route('/api/billing/run', methods=['POST'])
+def run_billing():
+    invoices = process_recurring_billing_job()
+
     return jsonify({
         "message": (
             f"Billing cycle completed. "
-            f"Generated {len(generated_invoices)} invoices."
+            f"Generated {len(invoices)} invoices."
         ),
-        "invoices": generated_invoices
+        "invoices": invoices
     })
+
+
+@app.route('/api/admin/trigger-recurring-billing', methods=['POST'])
+def trigger_recurring_billing_api():
+    """Manual trigger for testing or an admin panel button."""
+    invoices = process_recurring_billing_job()
+
+    return jsonify({
+        "message": "Recurring billing job completed successfully.",
+        "subscriptions_billed": len(invoices),
+        "invoices": invoices
+    }), 200
+
+
+# Runs every day at 00:05 server time. Started in the main block below.
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(
+    process_recurring_billing_job,
+    'cron',
+    hour=0,
+    minute=5,
+    id='recurring_billing',
+    replace_existing=True
+)
 
 
 # ============================================================
@@ -601,7 +680,7 @@ def get_invoices():
 
 
 # ============================================================
-# 6b. INVOICE DETAIL + PDF EXPORT
+# 6c. INVOICE DETAIL + PDF EXPORT
 # ============================================================
 
 class InvoicePDF(FPDF):
@@ -1097,6 +1176,11 @@ def manage_discounts():
 # ============================================================
 
 if __name__ == '__main__':
+    # debug=True launches two processes (a watcher and the real server).
+    # Start the scheduler only in the real one, or jobs would run twice.
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        scheduler.start()
+
     print(
         "🚀 PostgreSQL API Server starting on http://localhost:5000"
     )
