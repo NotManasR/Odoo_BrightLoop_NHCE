@@ -25,6 +25,11 @@ def get_db():
     )
     return conn
 
+
+# ============================================================
+# 0. SIGNUP
+# ============================================================
+
 @app.route('/api/signup', methods=['POST'])
 def signup():
     data = request.json or {}
@@ -55,14 +60,18 @@ def signup():
         """, (name, email, password_hash))
         user = cursor.fetchone()
         conn.commit()
-    except psycopg2.errors.UniqueViolation:
+    except psycopg2.errors.UniqueViolation as e:
         conn.rollback()
+        if e.diag.constraint_name == 'users_name_unique':
+            return jsonify({"error": "This username is already taken"}), 409
         return jsonify({"error": "An account with this email already exists"}), 409
     finally:
         cursor.close()
         conn.close()
 
     return jsonify(user), 201
+
+
 # ============================================================
 # 1. GET PRODUCTS & VARIANTS
 # ============================================================
@@ -498,6 +507,12 @@ def get_dashboard():
         "collected_payments_count": collected_payments,
         "overdue_balance": overdue_balance
     })
+
+
+# ============================================================
+# 9. CREATE PRODUCT
+# ============================================================
+
 @app.route('/api/products', methods=['POST'])
 def create_product():
     data = request.json or {}
@@ -533,6 +548,7 @@ def create_product():
 
     return jsonify(product), 201
 
+
 # ============================================================
 # RUN FLASK APPLICATION
 # ============================================================
@@ -547,4 +563,3 @@ if __name__ == '__main__':
         port=5000,
         debug=True
     )
-
