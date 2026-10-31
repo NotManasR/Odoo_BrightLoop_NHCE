@@ -133,7 +133,7 @@
 
 <script>
   // Change this to your backend sign-up endpoint (e.g. a FastAPI route)
-  const API_URL = "http://127.0.0.1:8000/signup";
+  const API_URL = "http://localhost:5000/api/signup";
   const SIGNIN_PAGE = "signin.html";
 
   const form = document.getElementById("signupForm");
@@ -197,7 +197,7 @@
 
       if (!res.ok) {
         let detail = "Could not create account. Try again.";
-        try { const d = await res.json(); if (d.detail) detail = d.detail; } catch (_) {}
+        try { const d = await res.json(); if (d.error) detail = d.error; } catch (_) {}
         throw new Error(detail);
       }
 
