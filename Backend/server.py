@@ -1315,6 +1315,14 @@ def manage_discounts():
 # ============================================================
 
 if __name__ == '__main__':
+    debug = os.environ.get('FLASK_DEBUG', '1') == '1'
+
+    # With debug=True Flask starts two processes (a watcher and the real
+    # server); start the scheduler only in the real one, or jobs run twice.
+    # With debug=False there is a single process, so start it directly.
+    if not debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        scheduler.start()
+
     print(
         "🚀 PostgreSQL API Server starting on http://localhost:5000"
     )

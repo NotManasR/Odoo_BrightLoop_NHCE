@@ -128,7 +128,7 @@
 
 <script>
   // Change this to your backend sign-in endpoint (e.g. a FastAPI route)
-  const API_URL = "http://127.0.0.1:8000/login";
+  const API_URL = "http://localhost:5000/api/login";
 
   const form = document.getElementById("loginForm");
   const username = document.getElementById("username");
@@ -194,7 +194,7 @@
       message.classList.add("ok");
 
       // Put the real page name for each role here; leave "" until that page exists
-      const ROLE_HOME = { Admin: "", Staff: "", Customer: "" };
+      const ROLE_HOME = { Admin: "admin.html", Staff: "employee.html", Customer: "Customer.html" };
       const home = ROLE_HOME[data.user.role];
       if (home) setTimeout(() => { window.location.href = home; }, 800);
       // window.location.href = "dashboard.html";
