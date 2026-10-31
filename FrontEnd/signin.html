@@ -184,12 +184,19 @@
         })
       });
 
-      if (!res.ok) throw new Error("Invalid username or password.");
+            const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Invalid username or password.");
 
-      const data = await res.json();
-      message.textContent = "Sign in successful!";
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      message.textContent = "Signed in as " + data.user.role + ".";
       message.classList.add("ok");
-      console.log(data);
+
+      // Put the real page name for each role here; leave "" until that page exists
+      const ROLE_HOME = { Admin: "", Staff: "", Customer: "" };
+      const home = ROLE_HOME[data.user.role];
+      if (home) setTimeout(() => { window.location.href = home; }, 800);
       // window.location.href = "dashboard.html";
     } catch (err) {
       message.textContent = err.message || "Something went wrong. Try again.";
