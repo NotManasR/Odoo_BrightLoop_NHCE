@@ -1,210 +1,218 @@
 
-import sqlite3
+import os
+import psycopg2
 
-# SQL schema and initial seed data
+# Get database URL from environment or use local PostgreSQL default
+DATABASE_URL = os.environ.get(
+    'DATABASE_URL',
+    'postgresql://postgres:postgres@localhost:5432/brightloop'
+)
+
+
+# SQL Schema and Initial Seed Data
 SQL_SCRIPT = """
 -- 1. Users
 CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('Admin', 'Staff', 'Customer'))
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL
+        CHECK (role IN ('Admin', 'Staff', 'Customer'))
 );
 
 -- 2. Products
 CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    type TEXT,
-    sales_price REAL NOT NULL,
-    cost_price REAL,
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100),
+    sales_price DECIMAL(10, 2) NOT NULL,
+    cost_price DECIMAL(10, 2),
     notes TEXT
 );
 
 -- 3. Product Variants
 CREATE TABLE IF NOT EXISTS product_variants (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_id INTEGER,
-    variant_name TEXT NOT NULL,
-    extra_price REAL DEFAULT 0.00,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    id SERIAL PRIMARY KEY,
+    product_id INT REFERENCES products(id) ON DELETE CASCADE,
+    variant_name VARCHAR(255) NOT NULL,
+    extra_price DECIMAL(10, 2) DEFAULT 0.00
 );
 
 -- 4. Plans
 CREATE TABLE IF NOT EXISTS plans (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    price REAL NOT NULL,
-    billing_period TEXT CHECK (
-        billing_period IN ('Daily', 'Weekly', 'Monthly', 'Yearly')
-    ),
-    min_quantity INTEGER DEFAULT 1,
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    billing_period VARCHAR(50)
+        CHECK (billing_period IN ('Daily', 'Weekly', 'Monthly', 'Yearly')),
+    min_quantity INT DEFAULT 1,
     available_start_date DATE,
     available_end_date DATE,
-    is_closable INTEGER DEFAULT 1,
-    is_pausable INTEGER DEFAULT 1,
-    is_renewable INTEGER DEFAULT 1
+    is_closable BOOLEAN DEFAULT TRUE,
+    is_pausable BOOLEAN DEFAULT TRUE,
+    is_renewable BOOLEAN DEFAULT TRUE
 );
 
 -- 5. Taxes
 CREATE TABLE IF NOT EXISTS taxes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    percentage REAL NOT NULL
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    percentage DECIMAL(5, 2) NOT NULL
 );
 
 -- 6. Discounts
 CREATE TABLE IF NOT EXISTS discounts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_id INTEGER,
-    discount_type TEXT CHECK (discount_type IN ('fixed', 'percent')),
-    discount_value REAL NOT NULL,
-    min_purchase REAL DEFAULT 0,
-    min_quantity INTEGER DEFAULT 0,
+    id SERIAL PRIMARY KEY,
+    product_id INT REFERENCES products(id) ON DELETE SET NULL,
+    discount_type VARCHAR(20)
+        CHECK (discount_type IN ('fixed', 'percent')),
+    discount_value DECIMAL(10, 2) NOT NULL,
+    min_purchase DECIMAL(10, 2) DEFAULT 0,
+    min_quantity INT DEFAULT 0,
     start_date DATE,
     end_date DATE,
-    usage_limit INTEGER,
-    times_used INTEGER DEFAULT 0,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+    usage_limit INT,
+    times_used INT DEFAULT 0
 );
 
 -- 7. Subscriptions
 CREATE TABLE IF NOT EXISTS subscriptions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    subscription_number TEXT UNIQUE NOT NULL,
-    customer_id INTEGER NOT NULL,
-    plan_id INTEGER,
-    status TEXT CHECK (
-        status IN ('Draft', 'Quotation', 'Confirmed', 'Active', 'Closed')
-    ),
+    id SERIAL PRIMARY KEY,
+    subscription_number VARCHAR(100) UNIQUE NOT NULL,
+    customer_id INT REFERENCES users(id) ON DELETE CASCADE,
+    plan_id INT REFERENCES plans(id),
+    status VARCHAR(50)
+        CHECK (status IN ('Draft', 'Quotation', 'Confirmed', 'Active', 'Closed')),
     start_date DATE,
     expiry_date DATE,
-    payment_terms TEXT,
-    FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (plan_id) REFERENCES plans(id)
+    payment_terms VARCHAR(100)
 );
 
 -- 8. Subscription Lines
 CREATE TABLE IF NOT EXISTS subscription_lines (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    subscription_id INTEGER NOT NULL,
-    product_id INTEGER,
-    tax_id INTEGER,
-    quantity INTEGER NOT NULL DEFAULT 1,
-    unit_price REAL NOT NULL,
-    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id),
-    FOREIGN KEY (tax_id) REFERENCES taxes(id)
+    id SERIAL PRIMARY KEY,
+    subscription_id INT REFERENCES subscriptions(id) ON DELETE CASCADE,
+    product_id INT REFERENCES products(id),
+    tax_id INT REFERENCES taxes(id),
+    quantity INT NOT NULL DEFAULT 1,
+    unit_price DECIMAL(10, 2) NOT NULL
 );
 
 -- 9. Invoices
 CREATE TABLE IF NOT EXISTS invoices (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    invoice_number TEXT UNIQUE NOT NULL,
-    subscription_id INTEGER,
-    customer_id INTEGER NOT NULL,
-    status TEXT CHECK (status IN ('Draft', 'Confirmed', 'Paid')),
+    id SERIAL PRIMARY KEY,
+    invoice_number VARCHAR(100) UNIQUE NOT NULL,
+    subscription_id INT REFERENCES subscriptions(id),
+    customer_id INT REFERENCES users(id),
+    status VARCHAR(50)
+        CHECK (status IN ('Draft', 'Confirmed', 'Paid')),
     due_date DATE,
-    subtotal REAL NOT NULL,
-    tax_total REAL DEFAULT 0,
-    discount_total REAL DEFAULT 0,
-    total_amount REAL NOT NULL,
-    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id),
-    FOREIGN KEY (customer_id) REFERENCES users(id)
+    subtotal DECIMAL(10, 2) NOT NULL,
+    tax_total DECIMAL(10, 2) DEFAULT 0,
+    discount_total DECIMAL(10, 2) DEFAULT 0,
+    total_amount DECIMAL(10, 2) NOT NULL
 );
 
 -- 10. Invoice Lines
 CREATE TABLE IF NOT EXISTS invoice_lines (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    invoice_id INTEGER NOT NULL,
-    quantity INTEGER NOT NULL,
-    price REAL NOT NULL,
-    tax_amount REAL DEFAULT 0,
-    discount_amount REAL DEFAULT 0,
-    FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+    id SERIAL PRIMARY KEY,
+    invoice_id INT REFERENCES invoices(id) ON DELETE CASCADE,
+    quantity INT NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    tax_amount DECIMAL(10, 2) DEFAULT 0,
+    discount_amount DECIMAL(10, 2) DEFAULT 0
 );
 
 -- 11. Payments
 CREATE TABLE IF NOT EXISTS payments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    invoice_id INTEGER NOT NULL,
-    method TEXT NOT NULL,
-    amount REAL NOT NULL,
+    id SERIAL PRIMARY KEY,
+    invoice_id INT REFERENCES invoices(id) ON DELETE CASCADE,
+    method VARCHAR(100) NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL,
     payment_date DATE NOT NULL,
-    note TEXT,
-    FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+    note TEXT
 );
+
 
 -- ===================================
 -- SEED INITIAL MOCK DATA
 -- ===================================
 
-INSERT OR IGNORE INTO users (
-    id, email, password_hash, role
-)
+INSERT INTO users (id, email, password_hash, role)
 VALUES
     (1, 'admin@brightloop.com', 'pwd_admin', 'Admin'),
     (2, 'staff@brightloop.com', 'pwd_staff', 'Staff'),
     (3, 'procurement@shell.com', 'pwd_shell', 'Customer'),
-    (4, 'accounts@infosys.com', 'pwd_infosys', 'Customer');
+    (4, 'accounts@infosys.com', 'pwd_infosys', 'Customer')
+ON CONFLICT (email) DO NOTHING;
 
-INSERT OR IGNORE INTO products (
+
+INSERT INTO products (
     id, name, type, sales_price, cost_price, notes
 )
-VALUES
-    (1, 'Business ERP Software', 'Service', 1000.00, 400.00,
-     'Enterprise ERP Suite');
+VALUES (
+    1, 'Business ERP Software', 'Service',
+    1000.00, 400.00, 'Enterprise ERP Suite'
+)
+ON CONFLICT (id) DO NOTHING;
 
-INSERT OR IGNORE INTO product_variants (
+
+INSERT INTO product_variants (
     id, product_id, variant_name, extra_price
 )
-VALUES
-    (1, 1, 'Odoo Brand Edition', 560.00);
+VALUES (
+    1, 1, 'Odoo Brand Edition', 560.00
+)
+ON CONFLICT (id) DO NOTHING;
 
-INSERT OR IGNORE INTO plans (
+
+INSERT INTO plans (
     id, name, price, billing_period, min_quantity,
     is_closable, is_pausable, is_renewable
 )
-VALUES
-    (1, 'Standard Monthly Plan', 1000.00, 'Monthly', 1, 1, 1, 1);
-
-INSERT OR IGNORE INTO taxes (
-    id, name, percentage
+VALUES (
+    1, 'Standard Monthly Plan', 1000.00,
+    'Monthly', 1, TRUE, TRUE, TRUE
 )
-VALUES
-    (1, 'Standard Sales Tax', 10.00);
+ON CONFLICT (id) DO NOTHING;
 
-INSERT OR IGNORE INTO discounts (
+
+INSERT INTO taxes (id, name, percentage)
+VALUES (1, 'Standard Sales Tax', 10.00)
+ON CONFLICT (id) DO NOTHING;
+
+
+INSERT INTO discounts (
     id, product_id, discount_type, discount_value,
     min_quantity, usage_limit, times_used
 )
-VALUES
-    (1, 1, 'percent', 10.00, 5, 100, 0);
+VALUES (
+    1, 1, 'percent', 10.00, 5, 100, 0
+)
+ON CONFLICT (id) DO NOTHING;
+
+
+-- Synchronise PostgreSQL sequences with inserted IDs
+SELECT setval('users_id_seq', (SELECT MAX(id) FROM users));
+SELECT setval('products_id_seq', (SELECT MAX(id) FROM products));
+SELECT setval('product_variants_id_seq', (SELECT MAX(id) FROM product_variants));
+SELECT setval('plans_id_seq', (SELECT MAX(id) FROM plans));
+SELECT setval('taxes_id_seq', (SELECT MAX(id) FROM taxes));
+SELECT setval('discounts_id_seq', (SELECT MAX(id) FROM discounts));
 """
 
 
 def setup_database():
-    conn = sqlite3.connect('database.db')
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
 
-    # Execute SQL script
-    cursor.executescript(SQL_SCRIPT)
+    cursor.execute(SQL_SCRIPT)
+
     conn.commit()
 
-    # Verify database setup
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table';"
-    )
+    print("✅ PostgreSQL database successfully initialized and seeded!")
 
-    tables = [
-        row[0]
-        for row in cursor.fetchall()
-        if row[0] != 'sqlite_sequence'
-    ]
-
-    print("✅ Database successfully initialized!")
-    print(f"Created {len(tables)} tables: {', '.join(tables)}")
-
+    cursor.close()
     conn.close()
 
 

@@ -1,18 +1,27 @@
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import datetime
+import os
+
 
 app = Flask(__name__)
-
-# Enables cross-origin requests for your frontend teammate
 CORS(app)
 
 
+DATABASE_URL = os.environ.get(
+    'DATABASE_URL',
+    'postgresql://postgres:postgres@localhost:5432/brightloop'
+)
+
+
 def get_db():
-    conn = sqlite3.connect('database.db')
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=RealDictCursor
+    )
     return conn
 
 
@@ -23,27 +32,28 @@ def get_db():
 @app.route('/api/products', methods=['GET'])
 def get_products():
     conn = get_db()
+    cursor = conn.cursor()
 
-    products = conn.execute(
-        "SELECT * FROM products"
-    ).fetchall()
+    cursor.execute("SELECT * FROM products")
+    products = cursor.fetchall()
 
     result = []
 
     for p in products:
         p_dict = dict(p)
 
-        variants = conn.execute(
-            "SELECT * FROM product_variants WHERE product_id = ?",
+        cursor.execute(
+            "SELECT * FROM product_variants WHERE product_id = %s",
             (p['id'],)
-        ).fetchall()
+        )
 
         p_dict['variants'] = [
-            dict(v) for v in variants
+            dict(v) for v in cursor.fetchall()
         ]
 
         result.append(p_dict)
 
+    cursor.close()
     conn.close()
 
     return jsonify(result)
@@ -56,8 +66,9 @@ def get_products():
 @app.route('/api/subscriptions', methods=['GET'])
 def get_subscriptions():
     conn = get_db()
+    cursor = conn.cursor()
 
-    subs = conn.execute("""
+    cursor.execute("""
         SELECT
             s.*,
             u.email AS customer_email,
@@ -65,14 +76,16 @@ def get_subscriptions():
         FROM subscriptions s
         JOIN users u ON s.customer_id = u.id
         LEFT JOIN plans p ON s.plan_id = p.id
-    """).fetchall()
+    """)
+
+    subs = cursor.fetchall()
 
     result = []
 
     for s in subs:
         s_dict = dict(s)
 
-        lines = conn.execute("""
+        cursor.execute("""
             SELECT
                 sl.*,
                 pr.name AS product_name,
@@ -80,22 +93,23 @@ def get_subscriptions():
             FROM subscription_lines sl
             JOIN products pr ON sl.product_id = pr.id
             LEFT JOIN taxes t ON sl.tax_id = t.id
-            WHERE sl.subscription_id = ?
-        """, (s['id'],)).fetchall()
+            WHERE sl.subscription_id = %s
+        """, (s['id'],))
 
         s_dict['lines'] = [
-            dict(l) for l in lines
+            dict(l) for l in cursor.fetchall()
         ]
 
         result.append(s_dict)
 
+    cursor.close()
     conn.close()
 
     return jsonify(result)
 
 
 # ============================================================
-# 3. CREATE QUOTATION (Sales Rep Action)
+# 3. CREATE QUOTATION
 # ============================================================
 
 @app.route('/api/subscriptions/quote', methods=['POST'])
@@ -122,14 +136,15 @@ def create_quote():
             payment_terms
         )
         VALUES (
-            ?, ?, ?, 'Quotation',
-            DATE('now'),
-            DATE('now', '+30 days'),
+            %s, %s, %s, 'Quotation',
+            CURRENT_DATE,
+            CURRENT_DATE + INTERVAL '30 days',
             'Net 30'
         )
+        RETURNING id
     """, (sub_num, customer_id, plan_id))
 
-    sub_id = cursor.lastrowid
+    sub_id = cursor.fetchone()['id']
 
     cursor.execute("""
         INSERT INTO subscription_lines (
@@ -139,10 +154,12 @@ def create_quote():
             quantity,
             unit_price
         )
-        VALUES (?, 1, 1, ?, 1000.00)
+        VALUES (%s, 1, 1, %s, 1000.00)
     """, (sub_id, quantity))
 
     conn.commit()
+
+    cursor.close()
     conn.close()
 
     return jsonify({
@@ -154,7 +171,6 @@ def create_quote():
 
 # ============================================================
 # 4. STATE MACHINE TRANSITION
-# Draft -> Quotation -> Confirmed -> Active -> Closed
 # ============================================================
 
 @app.route('/api/subscriptions/transition', methods=['POST'])
@@ -165,13 +181,16 @@ def transition_subscription():
     new_status = data.get('status')
 
     conn = get_db()
+    cursor = conn.cursor()
 
-    conn.execute(
-        "UPDATE subscriptions SET status = ? WHERE id = ?",
+    cursor.execute(
+        "UPDATE subscriptions SET status = %s WHERE id = %s",
         (new_status, sub_id)
     )
 
     conn.commit()
+
+    cursor.close()
     conn.close()
 
     return jsonify({
@@ -181,8 +200,6 @@ def transition_subscription():
 
 # ============================================================
 # 5. RUN BILLING CYCLE
-# Auto-generates invoices with taxes and discounts.
-# Prevents double billing.
 # ============================================================
 
 @app.route('/api/billing/run', methods=['POST'])
@@ -190,8 +207,7 @@ def run_billing():
     conn = get_db()
     cursor = conn.cursor()
 
-    # Select active subscriptions that have NOT been billed yet
-    active_subs = cursor.execute("""
+    cursor.execute("""
         SELECT s.*
         FROM subscriptions s
         WHERE s.status = 'Active'
@@ -200,31 +216,34 @@ def run_billing():
             FROM invoices
             WHERE subscription_id IS NOT NULL
         )
-    """).fetchall()
+    """)
+
+    active_subs = cursor.fetchall()
 
     generated_invoices = []
 
     for sub in active_subs:
 
-        lines = cursor.execute(
-            "SELECT * FROM subscription_lines WHERE subscription_id = ?",
-            (sub['id'],)
-        ).fetchall()
+        cursor.execute("""
+            SELECT *
+            FROM subscription_lines
+            WHERE subscription_id = %s
+        """, (sub['id'],))
 
-        subtotal = sum(
-            l['quantity'] * l['unit_price']
-            for l in lines
+        lines = cursor.fetchall()
+
+        subtotal = float(
+            sum(l['quantity'] * l['unit_price'] for l in lines)
         )
 
         total_qty = sum(
-            l['quantity']
-            for l in lines
+            l['quantity'] for l in lines
         )
 
-        # Calculate 10% Tax
+        # Calculate 10% tax
         tax_total = subtotal * 0.10
 
-        # Apply 10% discount if quantity >= 5 seats
+        # Apply 10% discount if quantity >= 5
         discount_total = (
             subtotal * 0.10
             if total_qty >= 5
@@ -248,10 +267,11 @@ def run_billing():
                 total_amount
             )
             VALUES (
-                ?, ?, ?, 'Confirmed',
-                DATE('now', '+15 days'),
-                ?, ?, ?, ?
+                %s, %s, %s, 'Confirmed',
+                CURRENT_DATE + INTERVAL '15 days',
+                %s, %s, %s, %s
             )
+            RETURNING id
         """, (
             inv_num,
             sub['id'],
@@ -262,11 +282,13 @@ def run_billing():
             total_amount
         ))
 
-        inv_id = cursor.lastrowid
+        inv_id = cursor.fetchone()['id']
 
         for l in lines:
 
-            line_price = l['quantity'] * l['unit_price']
+            line_price = float(
+                l['quantity'] * l['unit_price']
+            )
 
             cursor.execute("""
                 INSERT INTO invoice_lines (
@@ -276,18 +298,20 @@ def run_billing():
                     tax_amount,
                     discount_amount
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
             """, (
                 inv_id,
                 l['quantity'],
                 line_price,
                 line_price * 0.10,
-                (line_price * 0.10) if total_qty >= 5 else 0
+                (line_price * 0.10) if total_qty >= 5 else 0.0
             ))
 
         generated_invoices.append(inv_num)
 
     conn.commit()
+
+    cursor.close()
     conn.close()
 
     return jsonify({
@@ -306,15 +330,19 @@ def run_billing():
 @app.route('/api/invoices', methods=['GET'])
 def get_invoices():
     conn = get_db()
+    cursor = conn.cursor()
 
-    invoices = conn.execute("""
+    cursor.execute("""
         SELECT
             i.*,
             u.email AS customer_email
         FROM invoices i
         JOIN users u ON i.customer_id = u.id
-    """).fetchall()
+    """)
 
+    invoices = cursor.fetchall()
+
+    cursor.close()
     conn.close()
 
     return jsonify([
@@ -336,13 +364,15 @@ def pay_invoice():
     conn = get_db()
     cursor = conn.cursor()
 
-    inv = cursor.execute(
-        "SELECT total_amount FROM invoices WHERE id = ?",
+    cursor.execute(
+        "SELECT total_amount FROM invoices WHERE id = %s",
         (inv_id,)
-    ).fetchone()
+    )
+
+    inv = cursor.fetchone()
 
     amount = data.get('amount') or (
-        inv['total_amount'] if inv else 0.0
+        float(inv['total_amount']) if inv else 0.0
     )
 
     cursor.execute("""
@@ -354,17 +384,19 @@ def pay_invoice():
             note
         )
         VALUES (
-            ?, ?, ?, DATE('now'),
+            %s, %s, %s, CURRENT_DATE,
             'Logged by internal staff'
         )
     """, (inv_id, method, amount))
 
     cursor.execute(
-        "UPDATE invoices SET status = 'Paid' WHERE id = ?",
+        "UPDATE invoices SET status = 'Paid' WHERE id = %s",
         (inv_id,)
     )
 
     conn.commit()
+
+    cursor.close()
     conn.close()
 
     return jsonify({
@@ -379,33 +411,47 @@ def pay_invoice():
 @app.route('/api/dashboard', methods=['GET'])
 def get_dashboard():
     conn = get_db()
+    cursor = conn.cursor()
 
     # Count active subscriptions
-    active_subs = conn.execute("""
+    cursor.execute("""
         SELECT COUNT(*) AS cnt
         FROM subscriptions
         WHERE status = 'Active'
-    """).fetchone()['cnt']
+    """)
+
+    active_subs = cursor.fetchone()['cnt']
 
     # Calculate total revenue
-    total_revenue = conn.execute("""
+    cursor.execute("""
         SELECT COALESCE(SUM(amount), 0) AS rev
         FROM payments
-    """).fetchone()['rev']
+    """)
+
+    total_revenue = float(
+        cursor.fetchone()['rev']
+    )
 
     # Count collected payments
-    collected_payments = conn.execute("""
+    cursor.execute("""
         SELECT COUNT(*) AS cnt
         FROM payments
-    """).fetchone()['cnt']
+    """)
+
+    collected_payments = cursor.fetchone()['cnt']
 
     # Calculate outstanding confirmed invoice balance
-    overdue_balance = conn.execute("""
+    cursor.execute("""
         SELECT COALESCE(SUM(total_amount), 0) AS bal
         FROM invoices
         WHERE status = 'Confirmed'
-    """).fetchone()['bal']
+    """)
 
+    overdue_balance = float(
+        cursor.fetchone()['bal']
+    )
+
+    cursor.close()
     conn.close()
 
     return jsonify({
@@ -421,7 +467,9 @@ def get_dashboard():
 # ============================================================
 
 if __name__ == '__main__':
-    print("🚀 API Server starting on http://localhost:5000")
+    print(
+        "🚀 PostgreSQL API Server starting on http://localhost:5000"
+    )
 
     app.run(
         host='0.0.0.0',
