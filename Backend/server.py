@@ -1,13 +1,37 @@
+"""
+BrightLoop subscription & billing API  (merged version)
+
+Install (use fpdf2, NOT the old "fpdf" package -- they clash):
+    pip uninstall -y fpdf
+    pip install flask flask-cors psycopg2-binary fpdf2 python-dateutil APScheduler
+
+One-time DB changes needed by the recurring billing engine:
+    ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS next_billing_date DATE;
+    ALTER TABLE discounts     ADD COLUMN IF NOT EXISTS times_used INTEGER DEFAULT 0;
+
+Environment variables (all optional for local use):
+    SECRET_KEY    signing key for login / reset tokens
+    DATABASE_URL  postgres connection string
+    DEMO_MODE     "1" (default) returns the reset link in the API response,
+                  set to "0" in production
+    FLASK_DEBUG   "1" (default) or "0"
+"""
+
+import io
 import re
+import os
+import datetime
+
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from fpdf import FPDF
+from dateutil.relativedelta import relativedelta
+from apscheduler.schedulers.background import BackgroundScheduler
 import psycopg2
 import psycopg2.errors
 from psycopg2.extras import RealDictCursor
-import datetime
-import os
 
 
 app = Flask(__name__)
@@ -17,11 +41,14 @@ CORS(app)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-me')
 serializer = URLSafeTimedSerializer(app.secret_key)
 
-
 DATABASE_URL = os.environ.get(
     'DATABASE_URL',
     'postgresql://postgres:postgres@localhost:5432/brightloop'
 )
+
+# When on, /api/forgot-password returns the reset link so the demo page can
+# open it. Turn off (DEMO_MODE=0) anywhere real users exist.
+DEMO_MODE = os.environ.get('DEMO_MODE', '1') == '1'
 
 # scrypt (the default) is missing from some Python builds (e.g. macOS 3.9),
 # so every password in this project is hashed with pbkdf2.
@@ -156,10 +183,12 @@ def forgot_password():
     cursor.close()
     conn.close()
 
+    generic = {
+        "message": "If an account exists with that email, a reset link has been sent."
+    }
+
     if not user:
-        return jsonify({
-            "message": "If an account exists with that email, a reset link has been sent."
-        }), 200
+        return jsonify(generic), 200
 
     # Token is valid for 1 hour (checked when it is used)
     token = serializer.dumps(email, salt='password-reset-salt')
@@ -168,7 +197,11 @@ def forgot_password():
     # In production, send via SMTP. For local testing/demo, print to console
     print(f"[RESET LINK FOR {email}]: {reset_url}")
 
-    # The token is returned so the demo page can open its own reset page
+    if not DEMO_MODE:
+        return jsonify(generic), 200
+
+    # Demo only: the link/token are returned so the demo page can open its
+    # own reset page. Never do this in production.
     return jsonify({
         "message": "Password reset link sent to registered email",
         "reset_url": reset_url,
@@ -432,60 +465,166 @@ def transition_subscription():
 
 
 # ============================================================
-# 5. RUN BILLING CYCLE
+# 5. PRICING ENGINE
 # ============================================================
 
-@app.route('/api/billing/run', methods=['POST'])
-def run_billing():
-    conn = get_db()
-    cursor = conn.cursor()
+def compute_line_totals(cursor, product_id, tax_id, quantity, unit_price):
+    """
+    Calculates subtotal, tax, discount and total for ONE subscription line
+    using the rules stored in the `taxes` and `discounts` tables.
+    """
+    subtotal = float(quantity) * float(unit_price)
+    today = datetime.date.today()
 
+    # 1. TAX: use the tax rate linked to this line (if any)
+    total_tax = 0.0
+    if tax_id:
+        cursor.execute("SELECT percentage FROM taxes WHERE id = %s", (tax_id,))
+        tax_row = cursor.fetchone()
+        if tax_row:
+            total_tax = subtotal * (float(tax_row['percentage']) / 100.0)
+
+    # 2. DISCOUNTS: rules for this product, or rules that apply to all products
     cursor.execute("""
-        SELECT s.*
-        FROM subscriptions s
-        WHERE s.status = 'Active'
-        AND s.id NOT IN (
-            SELECT subscription_id
-            FROM invoices
-            WHERE subscription_id IS NOT NULL
-        )
-    """)
+        SELECT * FROM discounts
+        WHERE product_id IS NULL OR product_id = %s
+    """, (product_id,))
+    discount_rules = cursor.fetchall()
 
-    active_subs = cursor.fetchall()
+    total_discount = 0.0
+    used_rule_ids = []
+
+    for d in discount_rules:
+        # Date window
+        if d.get('start_date') and d['start_date'] > today:
+            continue
+        if d.get('end_date') and d['end_date'] < today:
+            continue
+
+        # Usage limit
+        if d.get('usage_limit') is not None and (d.get('times_used') or 0) >= d['usage_limit']:
+            continue
+
+        # Minimum purchase amount and minimum quantity
+        if d.get('min_purchase') and subtotal < float(d['min_purchase']):
+            continue
+        if d.get('min_quantity') and quantity < d['min_quantity']:
+            continue
+
+        # Discount amount
+        if d['discount_type'] == 'percent':
+            disc_amt = subtotal * (float(d['discount_value']) / 100.0)
+        else:  # 'fixed'
+            disc_amt = float(d['discount_value'])
+
+        total_discount += disc_amt
+        used_rule_ids.append(d['id'])
+
+    # A discount can never be larger than the line itself
+    total_discount = min(total_discount, subtotal)
+
+    final_total = subtotal - total_discount + total_tax
+
+    return {
+        "subtotal": round(subtotal, 2),
+        "tax_amount": round(total_tax, 2),
+        "discount_amount": round(total_discount, 2),
+        "total_amount": round(final_total, 2),
+        "used_rule_ids": used_rule_ids
+    }
+
+
+# ============================================================
+# 5b. RECURRING BILLING ENGINE
+# ============================================================
+
+def calculate_next_billing_date(current_date, billing_period):
+    """
+    Next billing date for a plan's period.
+    relativedelta handles month-end cases (e.g. Jan 31 -> Feb 28).
+    """
+    if isinstance(current_date, str):
+        current_date = datetime.datetime.strptime(current_date, '%Y-%m-%d').date()
+    elif isinstance(current_date, datetime.datetime):
+        current_date = current_date.date()
+
+    period = (billing_period or 'monthly').lower()
+
+    if period == 'daily':
+        return current_date + datetime.timedelta(days=1)
+    if period == 'weekly':
+        return current_date + datetime.timedelta(weeks=1)
+    if period == 'yearly':
+        return current_date + relativedelta(years=1)
+    return current_date + relativedelta(months=1)  # monthly and fallback
+
+
+def bill_due_subscriptions(cursor):
+    """
+    Invoices every Active subscription whose next_billing_date is empty
+    (never billed) or today/earlier, then moves next_billing_date forward.
+    The caller commits or rolls back. Returns the new invoice numbers.
+    """
+    today = datetime.date.today()
+
+    # FOR UPDATE SKIP LOCKED: if two runs overlap, each subscription is
+    # picked up by only one of them, so it can't be billed twice.
+    cursor.execute("""
+        SELECT s.*, p.billing_period
+        FROM subscriptions s
+        LEFT JOIN plans p ON s.plan_id = p.id
+        WHERE s.status = 'Active'
+          AND (s.next_billing_date IS NULL OR s.next_billing_date <= %s)
+        FOR UPDATE OF s SKIP LOCKED
+    """, (today,))
+    due_subs = cursor.fetchall()
 
     generated_invoices = []
 
-    for sub in active_subs:
-
+    for sub in due_subs:
         cursor.execute("""
             SELECT *
             FROM subscription_lines
             WHERE subscription_id = %s
         """, (sub['id'],))
-
         lines = cursor.fetchall()
 
-        subtotal = float(
-            sum(l['quantity'] * l['unit_price'] for l in lines)
-        )
+        if not lines:
+            continue
 
-        total_qty = sum(
-            l['quantity'] for l in lines
-        )
+        bill_date = sub['next_billing_date'] or today
 
-        # Calculate 10% tax
-        tax_total = subtotal * 0.10
+        inv_subtotal = 0.0
+        inv_tax = 0.0
+        inv_discount = 0.0
+        inv_total = 0.0
+        invoice_lines_data = []
+        rule_ids_to_count = []
 
-        # Apply 10% discount if quantity >= 5
-        discount_total = (
-            subtotal * 0.10
-            if total_qty >= 5
-            else 0.0
-        )
+        for line in lines:
+            calc = compute_line_totals(
+                cursor,
+                line['product_id'],
+                line['tax_id'],
+                line['quantity'],
+                line['unit_price']
+            )
 
-        total_amount = subtotal + tax_total - discount_total
+            inv_subtotal += calc['subtotal']
+            inv_tax += calc['tax_amount']
+            inv_discount += calc['discount_amount']
+            inv_total += calc['total_amount']
+            rule_ids_to_count.extend(calc['used_rule_ids'])
 
-        inv_num = f"INV-{sub['subscription_number']}"
+            invoice_lines_data.append({
+                'quantity': line['quantity'],
+                'price': calc['subtotal'],
+                'tax': calc['tax_amount'],
+                'discount': calc['discount_amount']
+            })
+
+        # One invoice number per subscription per billing date
+        inv_num = f"INV-{sub['subscription_number']}-{bill_date:%Y%m%d}"
 
         cursor.execute("""
             INSERT INTO invoices (
@@ -509,20 +648,15 @@ def run_billing():
             inv_num,
             sub['id'],
             sub['customer_id'],
-            subtotal,
-            tax_total,
-            discount_total,
-            total_amount
+            round(inv_subtotal, 2),
+            round(inv_tax, 2),
+            round(inv_discount, 2),
+            round(inv_total, 2)
         ))
 
         inv_id = cursor.fetchone()['id']
 
-        for l in lines:
-
-            line_price = float(
-                l['quantity'] * l['unit_price']
-            )
-
+        for il in invoice_lines_data:
             cursor.execute("""
                 INSERT INTO invoice_lines (
                     invoice_id,
@@ -534,26 +668,86 @@ def run_billing():
                 VALUES (%s, %s, %s, %s, %s)
             """, (
                 inv_id,
-                l['quantity'],
-                line_price,
-                line_price * 0.10,
-                (line_price * 0.10) if total_qty >= 5 else 0.0
+                il['quantity'],
+                il['price'],
+                il['tax'],
+                il['discount']
             ))
+
+        # Count each discount rule once per invoice it was used on
+        for rule_id in set(rule_ids_to_count):
+            cursor.execute("""
+                UPDATE discounts
+                SET times_used = COALESCE(times_used, 0) + 1
+                WHERE id = %s
+            """, (rule_id,))
+
+        # Move the schedule forward so this period is never billed twice
+        next_date = calculate_next_billing_date(bill_date, sub['billing_period'])
+        cursor.execute(
+            "UPDATE subscriptions SET next_billing_date = %s WHERE id = %s",
+            (next_date, sub['id'])
+        )
 
         generated_invoices.append(inv_num)
 
-    conn.commit()
+    return generated_invoices
 
-    cursor.close()
-    conn.close()
+
+def process_recurring_billing_job():
+    """Opens its own connection, bills everything due, commits or rolls back."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        invoices = bill_due_subscriptions(cursor)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+    print(f"[{datetime.datetime.now()}] Recurring billing: "
+          f"{len(invoices)} subscription(s) billed.")
+    return invoices
+
+
+@app.route('/api/billing/run', methods=['POST'])
+def run_billing():
+    invoices = process_recurring_billing_job()
 
     return jsonify({
         "message": (
             f"Billing cycle completed. "
-            f"Generated {len(generated_invoices)} invoices."
+            f"Generated {len(invoices)} invoices."
         ),
-        "invoices": generated_invoices
+        "invoices": invoices
     })
+
+
+@app.route('/api/admin/trigger-recurring-billing', methods=['POST'])
+def trigger_recurring_billing_api():
+    """Manual trigger for testing or an admin panel button."""
+    invoices = process_recurring_billing_job()
+
+    return jsonify({
+        "message": "Recurring billing job completed successfully.",
+        "subscriptions_billed": len(invoices),
+        "invoices": invoices
+    }), 200
+
+
+# Runs every day at 00:05 server time. Started in the main block below.
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(
+    process_recurring_billing_job,
+    'cron',
+    hour=0,
+    minute=5,
+    id='recurring_billing',
+    replace_existing=True
+)
 
 
 # ============================================================
@@ -596,6 +790,176 @@ def get_invoices():
     conn.close()
 
     return jsonify(invoices), 200
+
+
+# ============================================================
+# 6c. INVOICE DETAIL + PDF EXPORT
+# ============================================================
+
+class InvoicePDF(FPDF):
+    def header(self):
+        self.set_font('Helvetica', 'B', 16)
+        self.cell(0, 10, 'BRIGHTLOOP SOFTWARE',
+                  new_x="LMARGIN", new_y="NEXT", align='L')
+        self.set_font('Helvetica', '', 10)
+        self.cell(0, 5, 'Subscription & Billing Invoice',
+                  new_x="LMARGIN", new_y="NEXT", align='L')
+        self.ln(10)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Helvetica', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', align='C')
+
+
+def _pdf_safe(value):
+    """Helvetica only supports Latin-1, so replace anything else with '?'."""
+    return str(value if value is not None else '-').encode(
+        'latin-1', 'replace'
+    ).decode('latin-1')
+
+
+def _num(value):
+    """NULL-safe number for PDF maths (DB values may be Decimal or None)."""
+    return float(value or 0)
+
+
+def _load_invoice(invoice_id):
+    """Return (invoice, lines), or (None, None) if missing or not allowed."""
+    role = request.headers.get('X-User-Role', 'Customer')
+    user_id = request.headers.get('X-User-Id')
+    is_staff = role in ['Admin', 'Staff']
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT
+                i.*,
+                u.email AS customer_email,
+                u.name AS customer_name,
+                s.subscription_number
+            FROM invoices i
+            JOIN users u ON i.customer_id = u.id
+            LEFT JOIN subscriptions s ON i.subscription_id = s.id
+            WHERE i.id = %s
+        """, (invoice_id,))
+        inv = cursor.fetchone()
+
+        if not inv:
+            return None, None
+        # Customers can only open their own invoices
+        if not is_staff and str(inv['customer_id']) != str(user_id):
+            return None, None
+
+        cursor.execute(
+            "SELECT * FROM invoice_lines WHERE invoice_id = %s ORDER BY id",
+            (invoice_id,)
+        )
+        lines = [dict(l) for l in cursor.fetchall()]
+        return dict(inv), lines
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/api/invoices/<int:invoice_id>', methods=['GET'])
+def get_invoice_detail(invoice_id):
+    inv, lines = _load_invoice(invoice_id)
+    if inv is None:
+        return jsonify({"error": "Invoice not found"}), 404
+
+    inv['lines'] = lines
+    return jsonify(inv), 200
+
+
+@app.route('/api/invoices/<int:invoice_id>/pdf', methods=['GET'])
+def invoice_pdf(invoice_id):
+    inv, lines = _load_invoice(invoice_id)
+    if inv is None:
+        return jsonify({"error": "Invoice not found"}), 404
+
+    customer = inv['customer_name'] or inv['customer_email']
+
+    pdf = InvoicePDF(format='A4')
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+
+    # ---- Invoice details ----
+    pdf.set_font('Helvetica', 'B', 13)
+    pdf.cell(0, 8, _pdf_safe(f"Invoice {inv['invoice_number']}"),
+             new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font('Helvetica', '', 10)
+    details = [
+        f"Customer: {customer} ({inv['customer_email']})",
+        f"Subscription: {inv['subscription_number'] or '-'}",
+        f"Status: {inv['status']}",
+        f"Due date: {inv['due_date']}",
+    ]
+    for line in details:
+        pdf.cell(0, 6, _pdf_safe(line), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(8)
+
+    # ---- Line items table (widths add up to 190 mm) ----
+    widths = [15, 25, 35, 35, 35, 45]
+    headers = ['#', 'Qty', 'Price', 'Tax', 'Discount', 'Line total']
+
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_fill_color(230, 230, 230)
+    for w, h in zip(widths, headers):
+        pdf.cell(w, 8, h, border=1, align='C', fill=True,
+                 new_x="RIGHT", new_y="TOP")
+    pdf.ln(8)
+
+    pdf.set_font('Helvetica', '', 10)
+    for n, l in enumerate(lines, start=1):
+        price = _num(l['price'])
+        tax = _num(l['tax_amount'])
+        discount = _num(l['discount_amount'])
+        line_total = price + tax - discount
+        cells = [
+            str(n),
+            str(l['quantity']),
+            f"{price:.2f}",
+            f"{tax:.2f}",
+            f"{discount:.2f}",
+            f"{line_total:.2f}",
+        ]
+        for w, text in zip(widths, cells):
+            pdf.cell(w, 8, text, border=1, align='R',
+                     new_x="RIGHT", new_y="TOP")
+        pdf.ln(8)
+
+    pdf.ln(6)
+
+    # ---- Totals ----
+    totals = [
+        ('Subtotal', f"{_num(inv['subtotal']):.2f}"),
+        ('Tax', f"{_num(inv['tax_total']):.2f}"),
+        ('Discount', f"-{_num(inv['discount_total']):.2f}"),
+    ]
+    pdf.set_font('Helvetica', '', 11)
+    for label, value in totals:
+        pdf.cell(130, 7, '', new_x="RIGHT", new_y="TOP")
+        pdf.cell(30, 7, label, align='L', new_x="RIGHT", new_y="TOP")
+        pdf.cell(30, 7, value, align='R', new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font('Helvetica', 'B', 12)
+    pdf.cell(130, 9, '', new_x="RIGHT", new_y="TOP")
+    pdf.cell(30, 9, 'Total', border='T', align='L',
+             new_x="RIGHT", new_y="TOP")
+    pdf.cell(30, 9, f"{_num(inv['total_amount']):.2f}", border='T', align='R',
+             new_x="LMARGIN", new_y="NEXT")
+
+    buffer = io.BytesIO(bytes(pdf.output()))
+
+    return send_file(
+        buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f"{inv['invoice_number']}.pdf"
+    )
 
 
 # ============================================================
@@ -951,6 +1315,14 @@ def manage_discounts():
 # ============================================================
 
 if __name__ == '__main__':
+    debug = os.environ.get('FLASK_DEBUG', '1') == '1'
+
+    # With debug=True Flask starts two processes (a watcher and the real
+    # server); start the scheduler only in the real one, or jobs run twice.
+    # With debug=False there is a single process, so start it directly.
+    if not debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        scheduler.start()
+
     print(
         "🚀 PostgreSQL API Server starting on http://localhost:5000"
     )
@@ -958,5 +1330,5 @@ if __name__ == '__main__':
     app.run(
         host='0.0.0.0',
         port=5000,
-        debug=True
+        debug=debug
     )

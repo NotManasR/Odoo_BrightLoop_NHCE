@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>BrightLoop Employees</title>
+<style>
+:root{
+  --purple:#714B67;--purple-dark:#5a3a52;--yellow:#f1c40f;--yellow-dark:#d1d1d1;
+  --grey:#4a4a4f;--grey-light:#e9e9ec;--bg:#e2e2e6;--white:#fff;--black:#000;--error:#c0392b;
+  --card:#fff;--text:#4a4a4f;--heading:#5a3a52;
+  --ctrl-h:36px; /* shared height for the logout button and the profile picture */
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:"Segoe UI",Roboto,Arial,sans-serif;line-height:1.5;
+}
+
+/* ===== Header (both bars stick together) ===== */
+.site-header{position:sticky;top:0;z-index:10}
+header{
+  background:var(--purple);color:#fff;
+  display:flex;justify-content:space-between;align-items:center;padding:14px 28px;
+}
+header .brand{font-size:20px;font-weight:700;letter-spacing:.3px}
+
+/* Right-aligned group: logout + profile picture */
+header .header-right{display:flex;align-items:center;gap:20px;margin-left:auto}
+header .header-right img{
+  width:var(--ctrl-h);height:var(--ctrl-h);
+  aspect-ratio:1/1;border-radius:50%;object-fit:cover;
+}
+
+/* Centered navigation links */
+header .header-nav{
+  display:flex;align-items:center;justify-content:center;
+  flex-wrap:wrap;gap:12px 20px;width:100%;
+}
+header a{
+  color:#fff;text-decoration:none;font-size:14px;
+  border:1px solid rgba(255,255,255,.6);padding:6px 14px;border-radius:6px;
+  transition:background-color .3s ease-in-out;
+}
+header a:hover,header a:focus-visible{background:var(--purple-dark)}
+header a.logout{display:inline-flex;align-items:center;height:var(--ctrl-h);padding:0 14px}
+
+/* Second bar sits flush under the first */
+.site-header header + header{
+  padding-top:10px;padding-bottom:14px;
+  border-top:1px solid rgba(255,255,255,.15);
+}
+
+/* ===== Products ===== */
+.products{max-width:1180px;margin:0 auto;padding:40px 20px 56px}
+.intro{text-align:center;margin-bottom:32px}
+.intro h1{margin:0 0 8px;font-size:30px;color:var(--heading)}
+.intro p{margin:0;opacity:.85}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
+
+.card{
+  background:var(--card);border-radius:12px;border-top:5px solid var(--purple);
+  box-shadow:0 2px 10px rgba(0,0,0,.08);padding:26px;display:flex;flex-direction:column;
+}
+.tag{
+  align-self:flex-start;background:var(--grey-light);color:var(--purple);
+  font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;margin-bottom:12px;
+}
+.card h2{margin:0 0 10px;font-size:21px;color:var(--heading)}
+.card p{margin:0 0 20px;flex:1;font-size:15px}
+
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.plan{
+  background:var(--grey-light);border:2px solid transparent;border-radius:8px;
+  padding:10px 4px;text-align:center;cursor:pointer;font:inherit;color:inherit;
+  transition:border-color .3s ease-in-out,background-color .3s ease-in-out;
+}
+.plan:hover{border-color:var(--yellow-dark)}
+.plan[aria-pressed="true"]{border-color:var(--purple);background:var(--card)}
+.plan small{display:block;font-size:12px;opacity:.8}
+.plan strong{display:block;font-size:15px;color:var(--heading)}
+.plan em{display:block;font-style:normal;font-size:11px;color:var(--purple);min-height:16px}
+
+.custom{display:none;background:var(--grey-light);border-radius:8px;padding:12px;margin-bottom:12px;font-size:14px}
+.custom.show{display:block}
+.custom .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper button{
+  width:30px;height:30px;border:0;border-radius:6px;background:var(--purple);
+  color:#fff;font-size:18px;cursor:pointer;line-height:1;
+  transition:background-color .3s ease-in-out;
+}
+.stepper button:hover{background:var(--purple-dark)}
+.stepper input{
+  width:60px;height:30px;text-align:center;border:1px solid var(--yellow-dark);
+  border-radius:6px;font:inherit;color:var(--text);background:var(--card);
+}
+.custom .total{margin-top:8px;font-size:13px}
+.custom .err{color:var(--error);font-size:12px;min-height:16px;margin-top:4px}
+
+@media (max-width:420px){
+  .plans{grid-template-columns:1fr}
+  header{padding:12px 16px}
+}
+</style>
+</head>
+<body>
+
+<div class="site-header">
+
+  <header>
+    <span class="brand">BrightLoop Employees</span>
+    <div class="header-right">
+      <a class="logout" href="#logout">logout</a>
+      <img src="assets/pfp.png" alt="Profile picture">
+    </div>
+  </header>
+
+  <header>
+    <nav class="header-nav" aria-label="Product pages">
+      <a class="data-analysis" href="DA.html">Data Analysis, Planning &amp; BI</a>
+      <a class="operational-processes" href="OP.html">Operational Processes</a>
+      <a class="software-solutions" href="SS.html">Software Solutions</a>
+    </nav>
+  </header>
+
+</div>
+
+<!-- Products -->
+<main class="products" id="products">
+  <section class="intro">
+    <h1>Our Products</h1>
+    <p>Business intelligence and software solutions, on a subscription that suits you.</p>
+  </section>
+
+  <section class="grid" id="grid">
+
+    <!--
+      PRODUCT CARDS
+      data-month = the 1 Month price as a plain number (no ₹ or commas).
+      The custom-timeline total is calculated from it, so keep it in sync
+      with the 1 Month price shown in the button inside the same card.
+      To add another product, copy a whole <article> and edit the text.
+    -->
+
+    <!-- Product 1 -->
+    <article class="card" data-month="4999">
+      <span class="tag">Business Intelligence</span>
+      <h2>Data Analysis, Planning &amp; BI</h2>
+      <p>Turn raw data into business insights and efficiencies through the BrightLoop Services page, with clear dashboards and planning support.</p>
+
+      <div class="plans">
+        <button type="button" class="plan" data-k="year" aria-pressed="true">
+          <small>1 Year</small><strong>₹47,999</strong><em>Save 20%</em>
+        </button>
+        <button type="button" class="plan" data-k="month" aria-pressed="false">
+          <small>1 Month</small><strong>₹4,999</strong><em></em>
+        </button>
+        <button type="button" class="plan" data-k="custom" aria-pressed="false">
+          <small>Custom</small><strong>Choose</strong><em>your timeline</em>
+        </button>
+      </div>
+
+      <div class="custom">
+        <div class="row">
+          <label>Subscription length (months)</label>
+          <div class="stepper">
+            <button type="button" data-d="-1" aria-label="Decrease">−</button>
+            <input type="number" min="1" max="60" value="3" inputmode="numeric">
+            <button type="button" data-d="1" aria-label="Increase">+</button>
+          </div>
+        </div>
+        <div class="total"></div>
+        <div class="err"></div>
+      </div>
+    </article>
+
+    <!-- Product 2 -->
+    <article class="card" data-month="5999">
+      <span class="tag">Operations</span>
+      <h2>Operational Processes</h2>
+      <p>We analyze your existing workflows and provide the tools, techniques and support to streamline how your operations run.</p>
+
+      <div class="plans">
+        <button type="button" class="plan" data-k="year" aria-pressed="true">
+          <small>1 Year</small><strong>₹57,999</strong><em>Save 19%</em>
+        </button>
+        <button type="button" class="plan" data-k="month" aria-pressed="false">
+          <small>1 Month</small><strong>₹5,999</strong><em></em>
+        </button>
+        <button type="button" class="plan" data-k="custom" aria-pressed="false">
+          <small>Custom</small><strong>Choose</strong><em>your timeline</em>
+        </button>
+      </div>
+
+      <div class="custom">
+        <div class="row">
+          <label>Subscription length (months)</label>
+          <div class="stepper">
+            <button type="button" data-d="-1" aria-label="Decrease">−</button>
+            <input type="number" min="1" max="60" value="3" inputmode="numeric">
+            <button type="button" data-d="1" aria-label="Increase">+</button>
+          </div>
+        </div>
+        <div class="total"></div>
+        <div class="err"></div>
+      </div>
+    </article>
+
+    <!-- Product 3 -->
+    <article class="card" data-month="9999">
+      <span class="tag">Custom Software</span>
+      <h2>Software Solutions</h2>
+      <p>Custom software development, including Business Process Automation and Warehouse Management systems built around your needs.</p>
+
+      <div class="plans">
+        <button type="button" class="plan" data-k="year" aria-pressed="true">
+          <small>1 Year</small><strong>₹99,999</strong><em>Save 17%</em>
+        </button>
+        <button type="button" class="plan" data-k="month" aria-pressed="false">
+          <small>1 Month</small><strong>₹9,999</strong><em></em>
+        </button>
+        <button type="button" class="plan" data-k="custom" aria-pressed="false">
+          <small>Custom</small><strong>Choose</strong><em>your timeline</em>
+        </button>
+      </div>
+
+      <div class="custom">
+        <div class="row">
+          <label>Subscription length (months)</label>
+          <div class="stepper">
+            <button type="button" data-d="-1" aria-label="Decrease">−</button>
+            <input type="number" min="1" max="60" value="3" inputmode="numeric">
+            <button type="button" data-d="1" aria-label="Increase">+</button>
+          </div>
+        </div>
+        <div class="total"></div>
+        <div class="err"></div>
+      </div>
+    </article>
+
+  </section>
+</main>
+
+<script>
+// Behaviour only: all content lives in the HTML above.
+const fmt = n => "₹" + n.toLocaleString("en-IN");
+
+document.querySelectorAll(".card").forEach(card => {
+  const monthPrice = Number(card.dataset.month);
+  const panel = card.querySelector(".custom");
+  const input = panel.querySelector("input");
+  const total = panel.querySelector(".total");
+  const err   = panel.querySelector(".err");
+  const MIN = Number(input.min), MAX = Number(input.max); // set min/max on the <input> in the HTML
+
+  const months = () => {
+    const v = parseInt(input.value, 10);
+    return Number.isFinite(v) ? Math.min(MAX, Math.max(MIN, v)) : null;
+  };
+
+  function update() {
+    const raw = parseInt(input.value, 10);
+    const m = months();
+    err.textContent = (input.value !== "" && (raw < MIN || raw > MAX))
+      ? `Please choose between ${MIN} and ${MAX} months.` : "";
+    total.textContent = m
+      ? `${m} month${m > 1 ? "s" : ""} × ${fmt(monthPrice)} = ${fmt(m * monthPrice)}`
+      : "Enter the number of months.";
+  }
+
+  card.querySelectorAll(".plan").forEach(b => b.addEventListener("click", () => {
+    card.querySelectorAll(".plan").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    panel.classList.toggle("show", b.dataset.k === "custom");
+    update();
+  }));
+
+  panel.querySelectorAll(".stepper button").forEach(b => b.addEventListener("click", () => {
+    const cur = parseInt(input.value, 10) || MIN;
+    input.value = Math.min(MAX, Math.max(MIN, cur + Number(b.dataset.d)));
+    update();
+  }));
+
+  input.addEventListener("input", update);
+  input.addEventListener("blur", () => {
+    const m = months();
+    if (m) input.value = m;
+    update();
+  });
+
+  update();
+});
+</script>
+
+</body>
+</html>
