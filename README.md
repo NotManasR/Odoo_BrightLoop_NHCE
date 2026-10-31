@@ -1,40 +1,23 @@
 # BrightLoop: Unified Subscription Management System
 
-A web system that replaces manual spreadsheet tracking with one platform for **products, plans, quotations, subscriptions, tax and discount calculation, automated billing, payment recording, a customer portal, and an executive KPI dashboard**.
+Replace spreadsheet-based subscription tracking with one web platform for **products, plans, quotations, subscriptions, rule-driven billing, automated recurring invoices, payments, PDF invoices, customer and admin portals, and an executive dashboard.**
 
-Built for the Odoo hackathon at NHCE.
-
-**Repository:** https://github.com/NotManasR/Odoo_BrightLoop_NHCE (branch `main`)
-
----
-
-## Table of Contents
-
-1. [Features](#features)
-2. [Tech Stack](#tech-stack)
-3. [Architecture](#architecture)
-4. [Database Schema](#database-schema)
-5. [Business Workflow](#business-workflow)
-6. [Billing Engine](#billing-engine)
-7. [API Reference](#api-reference)
-8. [Roles and Access Control](#roles-and-access-control)
-9. [Getting Started](#getting-started)
-10. [Quick Demo](#quick-demo)
-11. [Security Notes](#security-notes)
-12. [Known Limitations and Roadmap](#known-limitations-and-roadmap)
+Built for the Odoo Hackathon at NHCE.
+Repository: https://github.com/NotManasR/Odoo_BrightLoop_NHCE
 
 ---
 
-## Features
+## Highlights
 
-- **Account management:** signup with server-side validation, unique email and username, hashed passwords.
-- **Password recovery:** forgot/reset flow using signed tokens that expire after 1 hour.
-- **Catalog management:** products, product variants, plans, taxes and discount rules (admin endpoints).
-- **Quotations and subscriptions:** create a quote, then move it through its lifecycle statuses.
-- **Dynamic billing:** invoices are computed from the tax and discount rules stored in the database, with date windows, usage limits, and minimum amount/quantity conditions.
-- **Payments:** record a payment against an invoice and mark it paid.
-- **Customer portal filtering:** customers see only their own subscriptions and invoices; Admin and Staff see everything.
-- **Executive dashboard:** active subscriptions, total revenue, payment count, and outstanding invoice balance.
+- **Full billing lifecycle:** quote, confirm, activate, invoice, pay, report.
+- **Automated recurring billing:** a daily scheduler (00:05 server time) invoices every Active subscription that is due, then advances its `next_billing_date` by the plan's period (daily, weekly, monthly, yearly). Month-end dates are handled (Jan 31 becomes Feb 28).
+- **Rule-driven pricing:** taxes and discounts come from database tables (date windows, usage limits, minimum amount and quantity), not hardcoded rates.
+- **Safe billing runs:** one shared billing engine for the scheduler and the manual triggers, row locking to prevent double billing, and a single transaction that rolls back on failure.
+- **Invoice PDF export and print:** download any invoice as a PDF or print it from the browser; customers can only open their own.
+- **Secure accounts:** hashed passwords, server-side validation, unique email and username, signed password-reset tokens that expire after 1 hour.
+- **Role-aware portals:** separate Admin and Customer pages; customers see only their own subscriptions and invoices.
+- **Admin catalog:** manage products, variants, plans, taxes and discount rules.
+- **KPI dashboard:** active subscriptions, revenue, payment count, outstanding balance.
 
 ---
 
@@ -43,59 +26,49 @@ Built for the Odoo hackathon at NHCE.
 | Layer | Technology |
 |---|---|
 | Backend | Python 3.12, Flask, Flask-CORS |
-| Database | PostgreSQL via `psycopg2` |
-| Security | Werkzeug (`generate_password_hash`), `itsdangerous` (signed, expiring tokens) |
-| Frontend | HTML5, CSS3, vanilla JavaScript (Fetch API, `localStorage` for session identity) |
+| Database | PostgreSQL (`psycopg2`) |
+| Scheduling | APScheduler, python-dateutil |
+| PDF | fpdf2 |
+| Security | Werkzeug password hashing, `itsdangerous` signed tokens |
+| Frontend | HTML5, CSS3, vanilla JavaScript (Fetch API, `localStorage`) |
 
 ---
 
-## Architecture
+## Project Structure
 
 ```
-Browser (HTML / CSS / JS)
-        |  fetch() with JSON + X-User-Role / X-User-Id headers
-        v
-Flask REST API  (server.py)
-        |  psycopg2 (parameterized SQL)
-        v
-PostgreSQL  (schema + seed data created by init_db.py)
+.
+├── Backend/
+│   ├── init_db.py                  # Creates 11 tables and seeds starter data
+│   ├── seed_pass.py                # Seed helper script
+│   └── server.py                   # Flask REST API, billing engine, scheduler, PDF export
+├── FrontEnd/                       # Sign-in, sign-up and password-reset pages
+├── frontpage.html                  # Landing page
+├── Customer.html                   # Customer portal
+├── BrightLoop – Admin (1).html     # Admin console
+├── .gitignore
+└── README.md
 ```
 
-- `init_db.py` runs once to create the tables and seed starter data. It is safe to re-run (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`).
-- `server.py` holds all API routes and the billing engine.
-- The frontend only talks to the API and never touches the database directly.
+**Architecture:** Browser (HTML/JS) -> Flask REST API (`server.py`) -> PostgreSQL. The frontend never touches the database directly.
 
 ---
 
-## Database Schema
+## Database
 
-Eleven tables, created by `init_db.py`:
-
-| Table | Purpose | Key columns |
-|---|---|---|
-| `users` | Admin, Staff and Customer accounts | `name` (unique), `email` (unique), `password_hash`, `role` |
-| `products` | Items that can be sold | `name`, `type`, `sales_price`, `cost_price`, `notes` |
-| `product_variants` | Options with an extra price | `product_id` (FK), `variant_name`, `extra_price` |
-| `plans` | Billing plans | `price`, `billing_period` (Daily/Weekly/Monthly/Yearly), `min_quantity`, availability dates, `is_closable`, `is_pausable`, `is_renewable` |
-| `taxes` | Tax rates | `name`, `percentage` |
-| `discounts` | Discount rules | `product_id` (nullable FK), `discount_type` (`fixed`/`percent`), `discount_value`, `min_purchase`, `min_quantity`, dates, `usage_limit`, `times_used` |
-| `subscriptions` | A customer's agreement | `subscription_number` (unique), `customer_id`, `plan_id`, `status`, `start_date`, `expiry_date`, `payment_terms` |
-| `subscription_lines` | Items in a subscription | `subscription_id`, `product_id`, `tax_id`, `quantity`, `unit_price` |
-| `invoices` | Bills generated by billing | `invoice_number` (unique), `subscription_id`, `customer_id`, `status`, `due_date`, `subtotal`, `tax_total`, `discount_total`, `total_amount` |
-| `invoice_lines` | Items on an invoice | `invoice_id`, `quantity`, `price`, `tax_amount`, `discount_amount` |
-| `payments` | Money received | `invoice_id`, `method`, `amount`, `payment_date`, `note` |
+Eleven related tables: `users`, `products`, `product_variants`, `plans`, `taxes`, `discounts`, `subscriptions`, `subscription_lines`, `invoices`, `invoice_lines`, `payments`.
 
 **Relationship chain:** `users -> subscriptions -> invoices -> payments`, with `subscription_lines` under subscriptions and `invoice_lines` under invoices.
 
-**Design choices**
-- Money uses `DECIMAL(10, 2)` to avoid floating-point rounding errors.
+- `DECIMAL(10,2)` for all money values (no floating-point rounding errors).
 - `CHECK` constraints enforce allowed roles, statuses, billing periods and discount types.
-- `ON DELETE CASCADE` removes child rows with their parent; `ON DELETE SET NULL` is used for discounts tied to a product.
-- Sequences are re-synced with `setval(...)` after seeding with manual IDs, so new rows don't collide with seed rows.
+- Foreign keys with `CASCADE` / `SET NULL` rules keep data consistent.
+- `subscriptions.next_billing_date` drives recurring billing.
+- `init_db.py` is idempotent: safe to re-run (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`), and it re-syncs ID sequences after seeding.
 
 ---
 
-## Business Workflow
+## Workflow
 
 ```
 Subscription:  Draft -> Quotation -> Confirmed -> Active -> Closed
@@ -103,8 +76,8 @@ Invoice:       Draft -> Confirmed -> Paid
 ```
 
 1. **Quote:** a subscription is created with status `Quotation` and one line item.
-2. **Confirm and activate:** the status is moved to `Confirmed`, then `Active`.
-3. **Bill:** the billing run turns Active, not-yet-invoiced subscriptions into invoices.
+2. **Confirm and activate:** the status moves to `Confirmed`, then `Active`.
+3. **Bill:** the billing engine turns due Active subscriptions into invoices.
 4. **Pay:** a payment is recorded and the invoice becomes `Paid`.
 5. **Report:** the dashboard recalculates from the tables on every request.
 
@@ -112,163 +85,82 @@ Invoice:       Draft -> Confirmed -> Paid
 
 ## Billing Engine
 
-`POST /api/billing/run` processes every Active subscription that has no invoice yet. For each subscription line:
+One function, `bill_due_subscriptions`, powers the daily scheduler, `POST /api/billing/run`, and `POST /api/admin/trigger-recurring-billing`.
 
-1. **Subtotal** = quantity x unit price.
-2. **Tax:** the rate from the tax linked to the line (`tax_id`) is applied to the subtotal.
-3. **Discounts:** every rule for that product, or with no product (applies to all), is evaluated. A rule is skipped if it is:
-   - outside its start/end dates,
-   - past its usage limit,
-   - below its minimum purchase amount or minimum quantity.
-4. A `percent` rule takes a percentage of the subtotal, and a `fixed` rule takes a flat amount. The total discount is capped at the subtotal.
-5. **Line total** = subtotal - discount + tax.
+**Which subscriptions are billed:** status `Active`, and `next_billing_date` is empty (never billed) or today or earlier.
 
-Line results are summed into the invoice header, invoice lines are saved, and each rule used has its `times_used` counter incremented once per invoice. The whole run is a single transaction, so it either fully succeeds or is rolled back.
+**For each line:**
 
-**Example (seed data):** quantity 10 x 1000 = 10,000. Tax 10% = 1,000. Discount 10% (min quantity 5) = 1,000. Total = **10,000**.
+1. **Subtotal** = quantity x unit price
+2. **Tax** = the rate linked to the line
+3. **Discounts** = every matching rule (per product or global), skipped if outside its dates, over its usage limit, or below its minimum amount or quantity; capped at the subtotal
+4. **Total** = subtotal - discount + tax
+
+**After invoicing,** `next_billing_date` moves forward by the plan's period, so a period is never billed twice. Invoice numbers look like `INV-SUB-1761890000-20261031`.
+
+**Example:** 10 x 1000 = 10,000, tax 10% = +1,000, discount 10% = -1,000, total **10,000**.
 
 ---
 
-## API Reference
+## API Overview
 
 Base URL: `http://localhost:5000`
 
-### Accounts
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/signup` | Register a customer (`username`, `email`, `password`) |
-| POST | `/api/forgot-password` | Generate a signed reset link for an email |
-| POST | `/api/reset-password` | Set a new password using a valid token |
-
-### Catalog (public read)
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/products` | List products with their variants |
-| POST | `/api/products` | Create a product |
-
-### Subscriptions and Billing
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/subscriptions` | List subscriptions with lines (role-filtered) |
-| POST | `/api/subscriptions/quote` | Create a quotation |
-| POST | `/api/subscriptions/transition` | Change a subscription's status |
-| POST | `/api/billing/run` | Generate invoices for eligible subscriptions |
-
-### Invoices and Payments
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/invoices` | List invoices (role-filtered) |
-| POST | `/api/invoices/pay` | Record a payment and mark the invoice paid |
-| GET | `/api/dashboard` | KPI summary |
-
-### Admin: Catalog and Rules
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET, POST | `/api/admin/products` | List or create products |
-| POST | `/api/admin/product-variants` | Create a product variant |
-| GET, POST | `/api/admin/plans` | List or create plans |
-| GET, POST | `/api/admin/taxes` | List or create tax rules |
-| GET, POST | `/api/admin/discounts` | List or create discount rules |
-
-### Example requests
-
-```bash
-# Sign up
-curl -X POST localhost:5000/api/signup -H "Content-Type: application/json" \
-  -d '{"username":"Ravi","email":"ravi@test.com","password":"Strong@Pass1"}'
-
-# Create a quotation
-curl -X POST localhost:5000/api/subscriptions/quote -H "Content-Type: application/json" \
-  -d '{"customer_id":3,"plan_id":1,"quantity":10}'
-
-# Customer view of invoices
-curl -H "X-User-Role: Customer" -H "X-User-Id: 3" localhost:5000/api/invoices
-```
-
----
-
-## Roles and Access Control
-
-| Role | Intended access |
+| Area | Endpoints |
 |---|---|
-| **Admin** | Full control: catalog, products, taxes, discounts, staff |
-| **Staff** | Day-to-day operations and customer subscriptions |
-| **Customer** | Restricted to their own subscriptions and invoices |
+| Accounts | `POST /api/signup`, `POST /api/forgot-password`, `POST /api/reset-password` |
+| Catalog | `GET /api/products`, `POST /api/products` |
+| Subscriptions | `GET /api/subscriptions`, `POST /api/subscriptions/quote`, `POST /api/subscriptions/transition` |
+| Billing | `POST /api/billing/run`, `POST /api/admin/trigger-recurring-billing` |
+| Invoices | `GET /api/invoices`, `GET /api/invoices/<id>`, `GET /api/invoices/<id>/pdf`, `POST /api/invoices/pay` |
+| Dashboard | `GET /api/dashboard` |
+| Admin | `GET, POST /api/admin/products`, `/api/admin/plans`, `/api/admin/taxes`, `/api/admin/discounts`; `POST /api/admin/product-variants` |
 
-Currently, role filtering on `GET /api/subscriptions` and `GET /api/invoices` is driven by the request headers `X-User-Role` and `X-User-Id`. Admin and Staff receive all rows. Any other role receives only rows where `customer_id` matches `X-User-Id`, and a missing or invalid ID returns an empty list.
-
-> **Important:** these headers are sent by the client, so this is a demo-level portal filter, not authentication. See [Security Notes](#security-notes).
+**Roles:** subscription and invoice endpoints read the `X-User-Role` and `X-User-Id` headers. Admin and Staff get all rows; customers get only their own.
 
 ---
 
 ## Getting Started
 
-### Prerequisites
-- Python 3.12
-- PostgreSQL running locally
-- pip
-
-### 1. Clone and install
+**Prerequisites:** Python 3.12, PostgreSQL
 
 ```bash
 git clone https://github.com/NotManasR/Odoo_BrightLoop_NHCE.git
-cd Odoo_BrightLoop_NHCE
-pip install flask flask-cors psycopg2-binary
-```
+cd Odoo_BrightLoop_NHCE/Backend
+pip install flask flask-cors psycopg2-binary fpdf2 apscheduler python-dateutil
 
-### 2. Create the database
-
-```bash
 psql -U postgres -c "CREATE DATABASE brightloop;"
+
+python init_db.py       # tables and seed data
+python seed_pass.py     # seed helper
+python server.py        # API on http://localhost:5000
 ```
 
-### 3. Configure (optional)
+Then open `frontpage.html` in a browser, or serve the project folder with `python -m http.server 5500` and visit `http://localhost:5500/frontpage.html`.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/brightloop` | Database connection |
-| `SECRET_KEY` | `dev-secret-change-me` | Signs password-reset tokens |
-
-```bash
-export DATABASE_URL="postgresql://user:password@localhost:5432/brightloop"
-export SECRET_KEY="a-long-random-string"
-```
-
-### 4. Initialize and run
-
-```bash
-python init_db.py     # creates tables and seeds starter data
-python server.py      # starts the API on http://localhost:5000
-```
-
-If you ran an older version of `init_db.py`, drop and recreate the database, or add the missing pieces by hand:
+**Upgrading an existing database** (if it was created before recurring billing or usernames):
 
 ```sql
-ALTER TABLE users ADD COLUMN name VARCHAR(100);
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS next_billing_date DATE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(100);
 ALTER TABLE users ADD CONSTRAINT users_name_unique UNIQUE (name);
 ```
 
-### Seed data
+**Optional environment variables**
 
-| Item | Value |
+| Variable | Default |
 |---|---|
-| Users | `admin@brightloop.com` (Admin), `staff@brightloop.com` (Staff), `procurement@shell.com` and `accounts@infosys.com` (Customers) |
-| Product | Business ERP Software (1000.00), variant "Odoo Brand Edition" (+560.00) |
-| Plan | Standard Monthly Plan (1000.00) |
-| Tax | Standard Sales Tax (10%) |
-| Discount | 10% off when quantity is 5 or more |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/brightloop` |
+| `SECRET_KEY` | `dev-secret-change-me` |
+
+**Seed data:** 2 internal users (Admin, Staff), 2 customers, 1 product with a variant, 1 monthly plan, 10% tax, and a 10% discount for quantity of 5 or more.
 
 ---
 
 ## Quick Demo
 
 ```bash
-# 1. Quote
+# 1. Create a quotation
 curl -X POST localhost:5000/api/subscriptions/quote -H "Content-Type: application/json" -d '{"quantity":10}'
 
 # 2. Confirm, then activate (use the returned subscription_id)
@@ -278,57 +170,40 @@ curl -X POST localhost:5000/api/subscriptions/transition -H "Content-Type: appli
 # 3. Run billing
 curl -X POST localhost:5000/api/billing/run
 
-# 4. Pay the invoice (use the real invoice id)
+# 4. Download the invoice PDF
+curl -H "X-User-Role: Staff" localhost:5000/api/invoices/1/pdf -o invoice1.pdf
+
+# 5. Pay the invoice
 curl -X POST localhost:5000/api/invoices/pay -H "Content-Type: application/json" -d '{"invoice_id":1}'
 
-# 5. Check the dashboard
+# 6. Check the dashboard
 curl localhost:5000/api/dashboard
 ```
 
+Use your real `subscription_id` and `invoice_id` if they differ from 1. Running `billing/run` a second time creates nothing, because the next billing date is a month away.
+
 ---
 
-## Security Notes
+## Security
 
-**Implemented**
-- Passwords are hashed with Werkzeug (salted, one-way).
-- All SQL uses parameterized queries, which prevents SQL injection.
-- Signup enforces: username of at least 3 characters, valid email shape, and a password of more than 8 characters with an uppercase letter, a lowercase letter and a special character. Rules are checked on the server, not only in the browser.
-- New accounts are always created with the `Customer` role, so a client cannot sign itself up as Admin.
-- Password-reset tokens are signed and expire after 1 hour.
+**Implemented:** hashed and salted passwords, parameterized SQL (no SQL injection), server-side validation, new accounts always created as `Customer`, expiring signed reset tokens, per-customer access check on invoice PDFs.
 
-**Before production**
-- Replace header-based roles with verified sessions or tokens (for example JWT) issued at login.
-- Never return `reset_url` in the API response. Email it instead.
-- Set a strong `SECRET_KEY` from the environment, and turn off `debug=True`.
+**Before production:**
+
+- Replace header-based roles with verified tokens (JWT or sessions).
+- Email reset links instead of returning them in the API response.
+- Set a strong `SECRET_KEY` and turn off `debug=True`.
 - Restrict CORS to the real frontend origin.
-- Hash the seeded users' placeholder passwords.
+- Run the scheduler as a real job (cron or Celery) instead of inside Flask.
 
 ---
 
-## Known Limitations and Roadmap
+## Roadmap
 
-- [ ] Login endpoint and token-verified roles on every protected route
-- [ ] Role checks on admin, billing, payment and transition endpoints
-- [ ] Validated subscription status transitions (currently any valid status can be set)
-- [ ] Recurring billing across billing periods (currently one invoice per subscription)
-- [ ] Quotes that read price, product and tax from the plan and catalog instead of fixed values
-- [ ] Partial payments and checks against paying an already-paid invoice
-- [ ] Overdue detection based on `due_date`
+- [ ] Token-verified roles and permission checks on admin, billing and payment routes
+- [ ] Validated subscription status transitions
+- [ ] Quotes that read price and tax from the catalog
+- [ ] Partial payments and overdue detection
+- [ ] Product names on invoice lines
 - [ ] Edit and delete for catalog and rules
-- [ ] Connection pooling and consistent `try/finally` cleanup across all routes
 - [ ] Automated tests
-
----
-
-## Project Structure
-
-```
-.
-├── init_db.py     # Schema creation and seed data
-├── server.py      # Flask API and billing engine
-└── (frontend)     # HTML, CSS and JavaScript pages
-```
-
-## License
-
-Add a license here (for example MIT) if you plan to publish the project.

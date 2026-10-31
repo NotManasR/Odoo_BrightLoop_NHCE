@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>BrightLoop – Admin</title>
+    <style>
+:root{
+  --purple:#714B67;--purple-dark:#5a3a52;--yellow:#f1c40f;--yellow-dark:#d1d1d1;
+  --grey:#4a4a4f;--grey-light:#e9e9ec;--bg:#e2e2e6;--white:#ffffff;--black:#000000;--error:#c0392b;
+  --card:#fff;--text:#4a4a4f;--heading:#5a3a52;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+*{box-sizing:border-box;transition:all .3s ease-in-out}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",Roboto,Arial,sans-serif;line-height:1.5}
+header{position:sticky;top:0;z-index:10;background:var(--purple);color:#fff;display:flex;justify-content:space-between;align-items:center;padding:14px 28px}
+header .brand{font-size:20px;font-weight:700;letter-spacing:.3px}
+header a{color:#fff;text-decoration:none;font-size:14px;border:1px solid rgba(255,255,255,.6);padding:6px 14px;border-radius:6px}
+header a:hover{background:var(--purple-dark)}
+.products{max-width:1180px;margin:0 auto;padding:40px 20px 56px}
+.intro{text-align:center;margin-bottom:32px}
+.intro h1{margin:0 0 8px;font-size:30px;color:var(--heading)}
+.intro p{margin:0;opacity:.85}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
+.card{background:var(--card);border-radius:12px;border-top:5px solid var(--purple);box-shadow:0 2px 10px rgba(0,0,0,.08);padding:26px;display:flex;flex-direction:column}
+.tag{align-self:flex-start;background:var(--grey-light);color:var(--purple);font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;margin-bottom:12px}
+.card h2{margin:0 0 10px;font-size:21px;color:var(--heading)}
+.card p{margin:0 0 20px;flex:1;font-size:15px}
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.plan{background:var(--grey-light);border:2px solid transparent;border-radius:8px;padding:10px 4px;text-align:center;cursor:pointer;font:inherit;color:inherit}
+.plan:hover{border-color:var(--yellow-dark)}
+.plan[aria-pressed="true"]{border-color:var(--purple);background:var(--card)}
+.plan small{display:block;font-size:12px;opacity:.8}
+.plan strong{display:block;font-size:15px;color:var(--heading)}
+.plan em{display:block;font-style:normal;font-size:11px;color:var(--purple);min-height:16px}
+.custom{display:none;background:var(--grey-light);border-radius:8px;padding:12px;margin-bottom:12px;font-size:14px}
+.custom.show{display:block}
+.custom .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper button{width:30px;height:30px;border:0;border-radius:6px;background:var(--purple);color:#fff;font-size:18px;cursor:pointer;line-height:1}
+.stepper button:hover{background:var(--purple-dark)}
+.stepper input{width:60px;height:30px;text-align:center;border:1px solid var(--yellow-dark);border-radius:6px;font:inherit;color:var(--text);background:var(--card)}
+.custom .total{margin-top:8px;font-size:13px}
+.custom .err{color:var(--error);font-size:12px;min-height:16px;margin-top:4px}
+.btn{background:var(--purple);color:#fff;border:0;border-radius:8px;padding:12px;font:inherit;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--purple-dark)}
+.msg{margin-top:10px;font-size:13px;min-height:18px;color:var(--purple)}
+@media (max-width:420px){.plans{grid-template-columns:1fr}}
+
+/* ===== Views, forms, details flow ===== */
+[hidden]{display:none!important}
+.narrow{max-width:780px;margin:0 auto;padding:40px 20px 56px}
+.narrow.auth{max-width:440px}
+.panel{background:var(--card);border-radius:12px;border-top:5px solid var(--purple);box-shadow:0 2px 10px rgba(0,0,0,.08);padding:28px}
+.panel h1{margin:0 0 6px;font-size:26px;color:var(--heading)}
+.panel .sub{margin:0 0 20px;opacity:.85;font-size:15px}
+.field{margin-bottom:14px}
+.field label{display:block;font-weight:600;font-size:14px;margin-bottom:4px;color:var(--heading)}
+.field input,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--yellow-dark);border-radius:8px;font:inherit;color:var(--text);background:#fff}
+.field input:focus,.field textarea:focus{outline:2px solid var(--purple);border-color:var(--purple)}
+.field textarea{min-height:84px;resize:vertical}
+.field .note{font-size:12px;color:var(--purple);margin-top:3px}
+.field .err{display:block;font-size:12px;color:var(--error);min-height:16px;margin-top:2px}
+.field.bad input,.field.bad textarea{border-color:var(--error)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+.summary{background:var(--grey-light);border-radius:8px;padding:14px 16px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.summary a,.panel .back{color:var(--purple);font-weight:600;text-decoration:none}
+.disc{margin:4px 0 18px}
+.disc label{display:flex;align-items:center;gap:10px;color:#9a9aa0;cursor:not-allowed;font-size:15px}
+.disc input{width:18px;height:18px;accent-color:#9a9aa0}
+.disc.on label{color:var(--black);cursor:pointer}
+.disc.on input{accent-color:var(--black)}
+.disc .note{font-size:12px;margin:3px 0 0 28px;color:#7d7d84}
+.panel .btn{width:100%}
+.formmsg{margin-top:10px;font-size:13px;color:var(--error);min-height:18px}
+.rec{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;margin:16px 0 22px;font-size:15px}
+.rec dt{font-weight:600;color:var(--heading)}
+.rec dd{margin:0;word-break:break-word}
+.userbox{display:flex;align-items:center;gap:12px;font-size:14px}
+header button{background:none;color:#fff;font:inherit;font-size:14px;border:1px solid rgba(255,255,255,.6);padding:6px 14px;border-radius:6px;cursor:pointer}
+header button:hover{background:var(--purple-dark)}
+@media (max-width:600px){.two{grid-template-columns:1fr}.rec{grid-template-columns:1fr}}
+
+.card .from{margin:-6px 0 16px;font-size:14px}
+.card .from strong{color:var(--heading)}
+.panel .back{display:inline-block;margin-bottom:14px;font-size:14px}
+.panel .tag{display:inline-block}
+.panel .plans{margin:18px 0 12px}
+.alt{margin-top:10px!important;font-size:14px}
+.alt a{color:var(--purple);font-weight:600;text-decoration:none}
+.alt a:hover{text-decoration:underline}
+.breakdown{background:var(--grey-light);border-radius:8px;padding:12px 16px;margin:0 0 18px;font-size:14px}
+.breakdown div{display:flex;justify-content:space-between;padding:3px 0}
+.breakdown .tot{border-top:1px solid #cfcfd4;margin-top:6px;padding-top:8px;font-weight:700;color:var(--heading);font-size:16px}
+.taxnote{margin-top:8px!important;font-size:13px;opacity:.8}
+.taxnote:empty{display:none}
+
+/* Admin-only styles (loaded after styles.css) */
+.brand small{font-weight:400;opacity:.8;font-size:13px;margin-left:6px}
+header nav{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+header nav a.active{background:var(--purple-dark);border-color:#fff}
+.wide{max-width:1180px;margin:0 auto;padding:32px 20px 56px}
+.ph{margin:0 0 20px;font-size:28px;color:var(--heading)}
+.sh{margin:30px 0 14px;font-size:20px;color:var(--heading)}
+.sh small{font-weight:400;font-size:13px;opacity:.7;margin-left:6px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.stat{background:var(--card);border-radius:12px;border-top:5px solid var(--purple);box-shadow:0 2px 10px rgba(0,0,0,.08);padding:18px}
+.stat b{display:block;font-size:28px;color:var(--heading)}
+.stat span{font-size:14px}
+.box{background:var(--card);border-radius:12px;border-top:5px solid var(--purple);box-shadow:0 2px 10px rgba(0,0,0,.08);padding:24px;margin-bottom:24px}
+.box h2{margin:0 0 14px;font-size:20px;color:var(--heading)}
+.narrowbox{max-width:620px}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--grey-light);vertical-align:top}
+th{color:var(--heading);white-space:nowrap}
+td.act{white-space:nowrap}
+.empty{padding:18px;text-align:center;opacity:.75}
+.btn.sm{padding:6px 12px;font-size:13px;margin-right:6px}
+.btn.ghost{background:var(--grey-light);color:var(--purple)}
+.btn.ghost:hover{background:var(--yellow-dark)}
+.btn.danger{background:var(--error)}
+.btn.danger:hover{background:#992d22}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.static .plan{cursor:default}
+.static .plan:hover{border-color:transparent}
+.plans.cols2{grid-template-columns:repeat(2,1fr)}
+.check{display:flex;align-items:center;gap:10px;margin-bottom:16px;font-size:15px}
+.check input{width:18px;height:18px;accent-color:var(--purple)}
+.summary2{background:var(--grey-light);border-radius:8px;padding:12px 14px;margin:0 0 16px;font-size:14px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--grey);color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;pointer-events:none;z-index:20}
+.toast.show{opacity:1}
+.money{width:130px;padding:6px 8px;border:1px solid var(--yellow-dark);border-radius:6px;font:inherit;color:var(--text);background:#fff}
+.money:focus{outline:2px solid var(--purple);border-color:var(--purple)}
+.hint{margin:0 0 14px;font-size:14px;opacity:.85}
+.dirty{font-size:13px;color:var(--purple)}
+.actions.top{margin-top:16px;align-items:center}
+.taxcell small{opacity:.7}
+.plan em+em{min-height:0}
+
+/* Header: logout + profile picture */
+header{gap:16px}
+header nav{margin-left:auto}
+.header-right{display:flex;align-items:center;gap:16px;flex-shrink:0}
+header a.logout{display:inline-flex;align-items:center;height:36px;padding:0 14px}
+.header-right img{width:36px;height:36px;border-radius:50%;object-fit:cover}
+@media (max-width:760px){
+  header{flex-wrap:wrap}
+  header nav{order:3;width:100%;justify-content:flex-start;margin-left:0}
+  .header-right{margin-left:auto}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">BrightLoop <small>Admin</small></span>
+  <nav id="nav">
+    <a href="#dashboard">Dashboard</a>
+    <a href="#products">Products</a>
+    <a href="#employees">Employees</a>
+    <a href="#costs">Costs</a>
+    <a href="#subscriptions">Subscriptions</a>
+  </nav>
+  <div class="header-right">
+    <a class="logout" href="index.html">logout</a>
+    <img id="pfp" src="assets/pfp.png" alt="Profile picture" width="36" height="36">
+  </div>
+</header>
+
+<!-- Dashboard: same product information customers see -->
+<main id="dashboard" class="view wide">
+  <h1 class="ph">Dashboard</h1>
+  <div class="stats" id="stats"></div>
+  <h2 class="sh">Products &amp; pricing <small>as customers see them</small></h2>
+  <section class="grid" id="dashGrid"></section>
+</main>
+
+<!-- Products: add, edit name / price, delete -->
+<main id="products" class="view wide" hidden>
+  <h1 class="ph">Products</h1>
+  <div class="box">
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Name</th><th>Category</th><th>Monthly price</th><th>Yearly price</th><th></th></tr></thead>
+        <tbody id="prodBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="box">
+    <h2 id="prodTitle">Add a new product</h2>
+    <form id="prodForm" novalidate>
+      <input type="hidden" id="pId">
+      <div class="two">
+        <div class="field"><label for="pName">Product name</label><input id="pName" list="prodNames" placeholder="e.g. Data Analysis, Planning &amp; BI"><span class="err"></span></div>
+        <div class="field"><label for="pTag">Category</label><input id="pTag" placeholder="e.g. Business Intelligence"><span class="err"></span></div>
+      </div>
+      <datalist id="prodNames"><option value="Data Analysis, Planning &amp; BI"><option value="Operational Processes"><option value="Software Solutions"></datalist>
+      <div class="field"><label for="pDesc">Short description</label><textarea id="pDesc"></textarea><span class="err"></span></div>
+      <div class="two">
+        <div class="field"><label for="pMonth">Monthly price (₹)</label><input id="pMonth" type="number" min="1" inputmode="numeric"><span class="err"></span></div>
+        <div class="field"><label for="pYear">Yearly price (₹)</label><input id="pYear" type="number" min="1" inputmode="numeric"><span class="err"></span></div>
+      </div>
+      <div class="actions"><button class="btn" type="submit" id="prodSave">Add product</button><button class="btn ghost" type="button" id="prodCancel" hidden>Cancel edit</button></div>
+    </form>
+  </div>
+</main>
+
+<!-- Employees -->
+<main id="employees" class="view wide" hidden>
+  <h1 class="ph">Employees</h1>
+  <div class="box">
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+        <tbody id="empBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="box">
+    <h2 id="empTitle">Add a new employee</h2>
+    <form id="empForm" novalidate>
+      <input type="hidden" id="eId">
+      <div class="two">
+        <div class="field"><label for="eName">Full name</label><input id="eName" autocomplete="off"><span class="err"></span></div>
+        <div class="field"><label for="eRole">Role</label><input id="eRole" autocomplete="off"><span class="err"></span></div>
+      </div>
+      <div class="two">
+        <div class="field"><label for="eEmail">Email id</label><input id="eEmail" type="email" autocomplete="off"><span class="err"></span></div>
+        <div class="field"><label for="ePhone">Phone number</label><input id="ePhone" type="tel" autocomplete="off"><span class="err"></span></div>
+      </div>
+      <div class="actions"><button class="btn" type="submit" id="empSave">Add employee</button><button class="btn ghost" type="button" id="empCancel" hidden>Cancel edit</button></div>
+    </form>
+  </div>
+</main>
+
+<!-- Costs: package totals, tax, discount rules -->
+<main id="costs" class="view wide" hidden>
+  <h1 class="ph">Costs</h1>
+
+  <div class="box">
+    <h2>Cost of each package</h2>
+    <p class="hint">Total to pay = price after any discount + tax. Edit the price or the total and the other one updates itself. Totals here are shown before any customer discount.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Product</th><th>Package</th><th>Price (before tax)</th><th id="taxHead">Tax</th><th>Total to pay</th></tr></thead>
+        <tbody id="costBody"></tbody>
+      </table>
+    </div>
+    <div class="actions top"><button class="btn" type="button" id="costSave">Save costs</button><span class="dirty" id="costDirty"></span></div>
+  </div>
+
+  <div class="box narrowbox">
+    <h2>Tax calculation</h2>
+    <form id="taxForm" novalidate>
+      <label class="check"><input type="checkbox" id="tEnabled"> Add tax to the price</label>
+      <div class="two">
+        <div class="field"><label for="tName">Tax name</label><input id="tName" placeholder="e.g. GST"><span class="err"></span></div>
+        <div class="field"><label for="tRate">Tax rate (%)</label><input id="tRate" type="number" min="0" max="100" step="0.01" inputmode="decimal"><span class="err"></span></div>
+      </div>
+      <p class="summary2" id="taxSummary"></p>
+      <button class="btn" type="submit">Save tax</button>
+    </form>
+  </div>
+
+  <div class="box narrowbox">
+    <h2>Discount rules</h2>
+    <label class="check"><input type="checkbox" id="dOn"> Offer volume discounts to customers</label>
+    <form id="ruleForm" novalidate>
+      <input type="hidden" id="dId">
+      <div class="two">
+        <div class="field"><label for="dMin">Unlocked when employees are more than</label><input id="dMin" type="number" min="1" inputmode="numeric"><span class="err"></span></div>
+        <div class="field"><label for="dPercent">Discount (%)</label><input id="dPercent" type="number" min="1" max="100" inputmode="numeric"><span class="err"></span></div>
+      </div>
+      <p class="summary2" id="ruleSummary"></p>
+      <div class="actions"><button class="btn" type="submit" id="ruleSave">Add rule</button><button class="btn ghost" type="button" id="ruleCancel" hidden>Cancel edit</button></div>
+    </form>
+  </div>
+
+  <div class="box">
+    <h2>All discount rules</h2>
+    <p class="hint" id="dNote"></p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Rule</th><th>Discount</th><th></th></tr></thead>
+        <tbody id="ruleBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Subscriptions received from customers -->
+<main id="subscriptions" class="view wide" hidden>
+  <h1 class="ph">Subscriptions</h1>
+  <div class="box">
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Reference</th><th>Date</th><th>Company</th><th>Customer</th><th>Invoice email</th><th>Product</th><th>Plan</th><th>Price</th><th>Total to pay</th><th>Employees</th><th>Discount</th></tr></thead>
+        <tbody id="subBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* Shared data for the customer site and the admin site (kept in the browser's localStorage).
+   Swap these functions for real database calls when your backend is ready. */
+const BL=(()=>{
+  const DEFAULT_PRODUCTS=[
+    {id:"p1",tag:"Business Intelligence",name:"Data Analysis, Planning & BI",desc:"Turn raw data into business insights and efficiencies through the BrightLoop Services page, with clear dashboards and planning support.",month:4999,year:47999},
+    {id:"p2",tag:"Operations",name:"Operational Processes",desc:"We analyze your existing workflows and provide the tools, techniques and support to streamline how your operations run.",month:5999,year:57999},
+    {id:"p3",tag:"Custom Software",name:"Software Solutions",desc:"Custom software development, including Business Process Automation and Warehouse Management systems built around your needs.",month:9999,year:99999}
+  ];
+  const DEFAULT_DISCOUNTS=[{id:"d1",minEmployees:25,percent:10}];
+  const DEFAULT_TAX={enabled:true,name:"GST",rate:18};
+  const get=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}};
+  const set=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+
+  const discountRules=()=>{
+    const d=get("bl_discounts",null);if(Array.isArray(d))return d;
+    const o=get("bl_rules",null); /* older single-rule format */
+    return o&&o.minEmployees?[{id:"d1",minEmployees:o.minEmployees,percent:o.percent}]:DEFAULT_DISCOUNTS;
+  };
+  const discountOn=()=>get("bl_discount_on",get("bl_rules",{enabled:true}).enabled!==false);
+  const tax=()=>({...DEFAULT_TAX,...get("bl_tax",{})});
+  /* best (highest) rule that applies to this many employees, or null */
+  const discountFor=n=>{
+    if(!discountOn())return null;
+    let best=null;
+    discountRules().forEach(r=>{if(n>r.minEmployees&&(!best||r.percent>best.percent))best=r});
+    return best;
+  };
+  const lowestMin=()=>{if(!discountOn())return null;const l=discountRules();return l.length?Math.min(...l.map(r=>r.minEmployees)):null};
+  /* price -> discount -> tax -> total */
+  const calc=(price,pct)=>{
+    const t=tax(),discount=Math.round(price*(pct||0)/100),net=price-discount;
+    const rate=t.enabled?Number(t.rate)||0:0,taxAmt=Math.round(net*rate/100);
+    return {price,discountPct:pct||0,discount,net,taxName:t.name,taxRate:rate,tax:taxAmt,total:net+taxAmt};
+  };
+  return {
+    products:()=>get("bl_products",DEFAULT_PRODUCTS),saveProducts:v=>set("bl_products",v),
+    discountRules,saveDiscountRules:v=>set("bl_discounts",v),
+    discountOn,saveDiscountOn:v=>set("bl_discount_on",!!v),
+    tax,saveTax:v=>set("bl_tax",v),
+    discountFor,lowestMin,calc,
+    employees:()=>get("bl_employees",[]),saveEmployees:v=>set("bl_employees",v),
+    subscriptions:()=>get("bl_subscriptions",[]),
+    fmt:n=>"₹"+Number(n).toLocaleString("en-IN"),
+    uid:p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+    esc:s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))
+  };
+})();
+
+/* BrightLoop admin – products, employees, discount rules, subscriptions */
+const $=s=>document.querySelector(s),fmt=BL.fmt,esc=BL.esc;
+const EMAIL=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const views=["dashboard","products","employees","costs","subscriptions"];
+let toastT;
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2200)}
+function check(rules){
+  let first=null;
+  for(const id in rules){
+    const el=$("#"+id),msg=rules[id](el.value),f=el.closest(".field");
+    f.classList.toggle("bad",!!msg);f.querySelector(".err").textContent=msg;
+    if(msg&&!first)first=el;
+  }
+  if(first)first.focus();
+  return !first;
+}
+document.addEventListener("input",e=>{
+  const f=e.target.closest&&e.target.closest(".field");
+  if(f){f.classList.remove("bad");const er=f.querySelector(".err");if(er)er.textContent=""}
+});
+function arm(btn,fn){ /* two-click delete */
+  if(btn.dataset.armed){fn();return}
+  btn.dataset.armed="1";const old=btn.textContent;btn.textContent="Click again to confirm";
+  setTimeout(()=>{delete btn.dataset.armed;btn.textContent=old},3000);
+}
+const savePct=p=>Math.round((1-p.year/(p.month*12))*100);
+
+/* ---------- Routing ---------- */
+function route(){
+  let r=location.hash.slice(1)||"dashboard";
+  if(!views.includes(r))r="dashboard";
+  views.forEach(v=>$("#"+v).hidden=v!==r);
+  document.querySelectorAll("#nav a").forEach(a=>a.classList.toggle("active",a.getAttribute("href")==="#"+r));
+  render();window.scrollTo(0,0);
+}
+window.addEventListener("hashchange",route);
+function render(){renderDash();renderProducts();renderEmployees();renderCosts();renderTax();renderDiscounts();renderSubs()}
+
+/* ---------- Dashboard ---------- */
+function renderDash(){
+  const ps=BL.products(),es=BL.employees(),ss=BL.subscriptions(),t=BL.tax(),nr=BL.discountRules().length;
+  $("#stats").innerHTML=[[ps.length,"Products"],[es.length,"Employees"],[ss.length,"Subscriptions received"],
+    [BL.discountOn()?nr+(nr===1?" rule":" rules"):"Off","Volume discount"],[t.enabled?t.rate+"%":"Off",t.name+" (tax)"]]
+    .map(([b,s])=>`<div class="stat"><b>${esc(b)}</b><span>${esc(s)}</span></div>`).join("");
+  const tiles=p=>[["year","1 Year"],["month","1 Month"]].map(([k,l])=>{const sv=k==="year"?savePct(p):0;
+    return `<div class="plan"><small>${l}</small><strong>${fmt(p[k])}</strong><em>${sv>0?"Save "+sv+"%":""}</em><em>Total ${fmt(totalOf(p[k]))}</em></div>`}).join("");
+  $("#dashGrid").innerHTML=ps.length?ps.map(p=>
+    `<article class="card static"><span class="tag">${esc(p.tag)}</span><h2>${esc(p.name)}</h2><p>${esc(p.desc)}</p>
+    <div class="plans cols2">${tiles(p)}</div>
+    <button class="btn" data-act="edit-p" data-id="${esc(p.id)}">Edit product</button></article>`).join("")
+    :'<div class="empty">No products yet. Add one under Products.</div>';
+}
+
+/* ---------- Products ---------- */
+function renderProducts(){
+  const ps=BL.products();
+  $("#prodBody").innerHTML=ps.length?ps.map(p=>`<tr><td><strong>${esc(p.name)}</strong></td><td>${esc(p.tag)}</td><td>${fmt(p.month)}</td><td>${fmt(p.year)}</td>
+    <td class="act"><button class="btn sm ghost" data-act="edit-p" data-id="${esc(p.id)}">Edit</button><button class="btn sm danger" data-act="del-p" data-id="${esc(p.id)}">Delete</button></td></tr>`).join("")
+    :'<tr><td colspan="5" class="empty">No products yet.</td></tr>';
+}
+function resetProd(){
+  $("#prodForm").reset();$("#pId").value="";
+  $("#prodTitle").textContent="Add a new product";$("#prodSave").textContent="Add product";$("#prodCancel").hidden=true;
+  document.querySelectorAll("#prodForm .field").forEach(f=>{f.classList.remove("bad");f.querySelector(".err").textContent=""});
+}
+function editProd(id){
+  const p=BL.products().find(x=>x.id===id);if(!p)return;
+  location.hash="products";
+  $("#pId").value=p.id;$("#pName").value=p.name;$("#pTag").value=p.tag;$("#pDesc").value=p.desc;$("#pMonth").value=p.month;$("#pYear").value=p.year;
+  $("#prodTitle").textContent="Edit product";$("#prodSave").textContent="Save changes";$("#prodCancel").hidden=false;
+  $("#prodForm").scrollIntoView({behavior:"smooth"});$("#pName").focus();
+}
+$("#prodCancel").addEventListener("click",resetProd);
+$("#prodForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  if(!check({
+    pName:v=>v.trim()?"":"Enter the product name.",
+    pTag:v=>v.trim()?"":"Enter a category.",
+    pDesc:v=>v.trim().length>=10?"":"Enter a short description (at least 10 characters).",
+    pMonth:v=>Number(v)>0?"":"Enter a monthly price above 0.",
+    pYear:v=>Number(v)>0?"":"Enter a yearly price above 0."
+  }))return;
+  const list=BL.products(),id=$("#pId").value;
+  const rec={id:id||BL.uid("p"),name:$("#pName").value.trim(),tag:$("#pTag").value.trim(),desc:$("#pDesc").value.trim(),
+    month:Math.round(Number($("#pMonth").value)),year:Math.round(Number($("#pYear").value))};
+  const i=list.findIndex(x=>x.id===id);
+  if(i>=0)list[i]=rec;else list.push(rec);
+  BL.saveProducts(list);resetProd();render();toast(i>=0?"Product updated.":"Product added.");
+});
+
+/* ---------- Employees ---------- */
+function renderEmployees(){
+  const es=BL.employees();
+  $("#empBody").innerHTML=es.length?es.map(m=>`<tr><td><strong>${esc(m.name)}</strong></td><td>${esc(m.role)}</td><td>${esc(m.email)}</td><td>${esc(m.phone)}</td>
+    <td class="act"><button class="btn sm ghost" data-act="edit-e" data-id="${esc(m.id)}">Edit</button><button class="btn sm danger" data-act="del-e" data-id="${esc(m.id)}">Remove</button></td></tr>`).join("")
+    :'<tr><td colspan="5" class="empty">No employees added yet.</td></tr>';
+}
+function resetEmp(){
+  $("#empForm").reset();$("#eId").value="";
+  $("#empTitle").textContent="Add a new employee";$("#empSave").textContent="Add employee";$("#empCancel").hidden=true;
+  document.querySelectorAll("#empForm .field").forEach(f=>{f.classList.remove("bad");f.querySelector(".err").textContent=""});
+}
+function editEmp(id){
+  const m=BL.employees().find(x=>x.id===id);if(!m)return;
+  $("#eId").value=m.id;$("#eName").value=m.name;$("#eRole").value=m.role;$("#eEmail").value=m.email;$("#ePhone").value=m.phone;
+  $("#empTitle").textContent="Edit employee";$("#empSave").textContent="Save changes";$("#empCancel").hidden=false;
+  $("#empForm").scrollIntoView({behavior:"smooth"});$("#eName").focus();
+}
+$("#empCancel").addEventListener("click",resetEmp);
+$("#empForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  if(!check({
+    eName:v=>v.trim()?"":"Enter the employee’s name.",
+    eRole:v=>v.trim()?"":"Enter the role.",
+    eEmail:v=>EMAIL.test(v.trim())?"":"Enter a valid email id.",
+    ePhone:v=>/^\d{10,15}$/.test(v.replace(/[\s+\-()]/g,""))?"":"Enter a valid phone number (10–15 digits)."
+  }))return;
+  const list=BL.employees(),id=$("#eId").value;
+  const rec={id:id||BL.uid("e"),name:$("#eName").value.trim(),role:$("#eRole").value.trim(),email:$("#eEmail").value.trim(),phone:$("#ePhone").value.trim()};
+  const i=list.findIndex(x=>x.id===id);
+  if(i>=0)list[i]=rec;else list.push(rec);
+  BL.saveEmployees(list);resetEmp();render();toast(i>=0?"Employee updated.":"Employee added.");
+});
+
+/* ---------- Costs: total to pay for each package ---------- */
+let costDirty=false;
+const rateNow=()=>{const t=BL.tax();return t.enabled?Number(t.rate)||0:0};
+const totalOf=p=>p+Math.round(p*rateNow()/100);
+const priceOf=t=>Math.round(t/(1+rateNow()/100));
+function taxCellText(price){
+  const t=BL.tax();
+  return rateNow()>0?`${fmt(Math.round(price*rateNow()/100))} <small>(${esc(t.name)} ${rateNow()}%)</small>`:"–";
+}
+function setDirty(d){costDirty=d;$("#costDirty").textContent=d?"You have unsaved changes.":""}
+function renderCosts(force){
+  if(costDirty&&!force)return; /* keep unsaved edits */
+  const ps=BL.products();
+  $("#taxHead").textContent=rateNow()>0?"Tax":"Tax (none)";
+  $("#costBody").innerHTML=ps.length?ps.map(p=>[["year","1 Year"],["month","1 Month"]].map(([k,l])=>
+    `<tr data-id="${esc(p.id)}" data-k="${k}"><td><strong>${esc(p.name)}</strong></td><td>${l}</td>
+    <td><input class="money" type="number" min="1" data-f="price" value="${p[k]}" aria-label="${esc(p.name)} ${l} price"></td>
+    <td class="taxcell">${taxCellText(p[k])}</td>
+    <td><input class="money" type="number" min="1" data-f="total" value="${totalOf(p[k])}" aria-label="${esc(p.name)} ${l} total to pay"></td></tr>`).join("")).join("")
+    :'<tr><td colspan="5" class="empty">Add a product first.</td></tr>';
+  setDirty(false);
+}
+function rowSync(tr,from){
+  const pi=tr.querySelector('[data-f="price"]'),ti=tr.querySelector('[data-f="total"]');
+  if(from==="price"){const p=Number(pi.value);if(!(p>0))return;ti.value=totalOf(p)}
+  else{const t=Number(ti.value);if(!(t>0))return;pi.value=priceOf(t)}
+  tr.querySelector(".taxcell").innerHTML=taxCellText(Number(pi.value));
+}
+function recomputeCosts(){
+  document.querySelectorAll("#costBody tr[data-id]").forEach(tr=>rowSync(tr,"price"));
+  $("#taxHead").textContent=rateNow()>0?"Tax":"Tax (none)";
+}
+$("#costBody").addEventListener("input",e=>{
+  const f=e.target.dataset.f;if(!f)return;
+  rowSync(e.target.closest("tr"),f);setDirty(true);
+});
+$("#costBody").addEventListener("change",e=>{
+  if(e.target.dataset.f==="total")rowSync(e.target.closest("tr"),"price"); /* tidy the total after rounding */
+});
+$("#costSave").addEventListener("click",()=>{
+  const ps=BL.products(),rows=[...document.querySelectorAll("#costBody tr[data-id]")];
+  for(const tr of rows){
+    const el=tr.querySelector('[data-f="price"]');
+    if(!(Number(el.value)>0)){el.focus();toast("Enter a price above 0 for every package.");return}
+  }
+  rows.forEach(tr=>{
+    const p=ps.find(x=>x.id===tr.dataset.id);
+    if(p)p[tr.dataset.k]=Math.round(Number(tr.querySelector('[data-f="price"]').value));
+  });
+  BL.saveProducts(ps);setDirty(false);render();toast("Costs saved.");
+});
+
+/* ---------- Tax calculation ---------- */
+function taxSummary(){
+  const on=$("#tEnabled").checked,rate=Number($("#tRate").value)||0,name=$("#tName").value.trim()||"Tax",tx=Math.round(5000*rate/100);
+  $("#taxSummary").textContent=on?`${name} of ${rate}% is added to the price after any discount. Example: ${fmt(5000)} + ${fmt(tx)} tax = ${fmt(5000+tx)} total to pay.`
+    :"No tax is added. Customers pay the price shown.";
+}
+function renderTax(){
+  if(document.activeElement&&document.activeElement.closest("#taxForm"))return; /* don’t overwrite while typing */
+  const t=BL.tax();$("#tEnabled").checked=t.enabled;$("#tName").value=t.name;$("#tRate").value=t.rate;taxSummary();
+}
+["tEnabled","tName","tRate"].forEach(id=>$("#"+id).addEventListener("input",taxSummary));
+$("#taxForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  if(!check({
+    tName:v=>v.trim()?"":"Enter a tax name, for example GST.",
+    tRate:v=>v.trim()!==""&&Number(v)>=0&&Number(v)<=100?"":"Enter a rate between 0 and 100."
+  }))return;
+  BL.saveTax({enabled:$("#tEnabled").checked,name:$("#tName").value.trim(),rate:Number($("#tRate").value)});
+  if(costDirty)recomputeCosts();else renderCosts(true);
+  render();toast("Tax saved.");
+});
+
+/* ---------- Discount rules ---------- */
+function renderDiscounts(){
+  $("#dOn").checked=BL.discountOn();
+  const rs=BL.discountRules().slice().sort((a,b)=>a.minEmployees-b.minEmployees);
+  $("#dNote").textContent=BL.discountOn()?"If more than one rule matches a customer, the highest discount is applied."
+    :"Discounts are turned off, so none of these rules apply right now.";
+  $("#ruleBody").innerHTML=rs.length?rs.map(r=>`<tr><td>More than <strong>${esc(r.minEmployees)}</strong> employees</td><td>${esc(r.percent)}% off</td>
+    <td class="act"><button class="btn sm ghost" data-act="edit-d" data-id="${esc(r.id)}">Edit</button><button class="btn sm danger" data-act="del-d" data-id="${esc(r.id)}">Delete</button></td></tr>`).join("")
+    :'<tr><td colspan="3" class="empty">No discount rules yet.</td></tr>';
+}
+$("#dOn").addEventListener("change",()=>{
+  BL.saveDiscountOn($("#dOn").checked);renderDiscounts();
+  toast($("#dOn").checked?"Discounts turned on.":"Discounts turned off.");
+});
+function ruleSummary(){
+  const min=$("#dMin").value,pc=$("#dPercent").value;
+  $("#ruleSummary").textContent=`Customers with more than ${min||"…"} employees can tick the discount box and get ${pc||"…"}% off.`;
+}
+["dMin","dPercent"].forEach(id=>$("#"+id).addEventListener("input",ruleSummary));
+function resetRule(){
+  $("#ruleForm").reset();$("#dId").value="";$("#ruleSave").textContent="Add rule";$("#ruleCancel").hidden=true;
+  document.querySelectorAll("#ruleForm .field").forEach(f=>{f.classList.remove("bad");f.querySelector(".err").textContent=""});
+  ruleSummary();
+}
+function editDisc(id){
+  const r=BL.discountRules().find(x=>x.id===id);if(!r)return;
+  $("#dId").value=r.id;$("#dMin").value=r.minEmployees;$("#dPercent").value=r.percent;
+  $("#ruleSave").textContent="Save rule";$("#ruleCancel").hidden=false;ruleSummary();
+  $("#ruleForm").scrollIntoView({behavior:"smooth"});$("#dMin").focus();
+}
+$("#ruleCancel").addEventListener("click",resetRule);
+$("#ruleForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  if(!check({
+    dMin:v=>/^\d+$/.test(v.trim())&&Number(v)>=1?"":"Enter a whole number of employees (1 or more).",
+    dPercent:v=>Number(v)>=1&&Number(v)<=100?"":"Enter a discount between 1 and 100."
+  }))return;
+  const list=BL.discountRules().slice(),id=$("#dId").value,min=parseInt($("#dMin").value,10);
+  if(list.some(r=>r.minEmployees===min&&r.id!==id)){
+    const f=$("#dMin").closest(".field");f.classList.add("bad");
+    f.querySelector(".err").textContent=`A rule for more than ${min} employees already exists. Edit it instead.`;$("#dMin").focus();return;
+  }
+  const rec={id:id||BL.uid("d"),minEmployees:min,percent:Number($("#dPercent").value)};
+  const i=list.findIndex(x=>x.id===id);
+  if(i>=0)list[i]=rec;else list.push(rec);
+  BL.saveDiscountRules(list);resetRule();render();toast(i>=0?"Rule updated.":"Rule added.");
+});
+
+/* ---------- Subscriptions ---------- */
+function renderSubs(){
+  const ss=BL.subscriptions().slice().reverse();
+  $("#subBody").innerHTML=ss.length?ss.map(r=>`<tr><td>${esc(r.id)}</td><td>${esc(new Date(r.savedAt).toLocaleDateString("en-IN"))}</td>
+    <td>${esc(r.company)}</td><td>${esc(r.customer)}<br><small>${esc(r.phone)}</small></td><td>${esc(r.companyEmail)}</td>
+    <td>${esc(r.product)}</td><td>${esc(r.plan)}</td><td>${fmt(r.price)}</td><td>${r.total!=null?"<strong>"+fmt(r.total)+"</strong>":"–"}</td><td>${esc(r.employees)}</td>
+    <td>${r.discountRequested?esc("Requested ("+(r.discountPercent||0)+"%)"):"–"}</td></tr>`).join("")
+    :'<tr><td colspan="11" class="empty">No subscriptions received yet.</td></tr>';
+}
+
+/* ---------- Buttons inside tables and cards ---------- */
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-act]");if(!b)return;
+  const {act,id}=b.dataset;
+  if(act==="edit-p")editProd(id);
+  else if(act==="edit-e")editEmp(id);
+  else if(act==="del-p")arm(b,()=>{BL.saveProducts(BL.products().filter(x=>x.id!==id));if($("#pId").value===id)resetProd();render();toast("Product deleted.")});
+  else if(act==="del-e")arm(b,()=>{BL.saveEmployees(BL.employees().filter(x=>x.id!==id));if($("#eId").value===id)resetEmp();render();toast("Employee removed.")});
+  else if(act==="edit-d")editDisc(id);
+  else if(act==="del-d")arm(b,()=>{BL.saveDiscountRules(BL.discountRules().filter(x=>x.id!==id));if($("#dId").value===id)resetRule();render();toast("Rule deleted.")});
+});
+
+/* Profile picture: fall back to a simple avatar if the image can't load */
+const pfp=$("#pfp");
+const avatar=()=>{pfp.src="data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><circle cx="18" cy="18" r="18" fill="#000"/><circle cx="18" cy="14" r="6" fill="#fff"/><path d="M6 31c2-7 7-9 12-9s10 2 12 9" fill="#fff"/></svg>')};
+pfp.addEventListener("error",avatar,{once:true});
+if(pfp.complete&&pfp.naturalWidth===0)avatar();
+
+ruleSummary();
+route();
+</script>
+</body>
+</html>
