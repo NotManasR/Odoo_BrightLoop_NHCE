@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>BrightLoop</title>
+    <style>
+:root{
+  --purple:#714B67;--purple-dark:#5a3a52;--yellow:#f1c40f;--yellow-dark:#d1d1d1;
+  --grey:#4a4a4f;--grey-light:#e9e9ec;--bg:#e2e2e6;--white:#ffffff;--black:#000000;--error:#c0392b;
+  --card:#fff;--text:#4a4a4f;--heading:#5a3a52;
+  --ctrl-h:36px; /* shared height for the logout button and the profile picture */
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+*{box-sizing:border-box;transition:all .3s ease-in-out}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",Roboto,Arial,sans-serif;line-height:1.5}
+header{position:sticky;top:0;z-index:10;background:var(--purple);color:#fff;display:flex;justify-content:space-between;align-items:center;padding:14px 28px}
+header .brand{font-size:20px;font-weight:700;letter-spacing:.3px}
+header a{color:#fff;text-decoration:none;font-size:14px;border:1px solid rgba(255,255,255,.6);padding:6px 14px;border-radius:6px}
+header a:hover{background:var(--purple-dark)}
+
+/* ===== Header: logout, profile picture, navigation ===== */
+header .header-right{display:flex;align-items:center;gap:20px;margin-left:auto}
+header .header-right img{width:var(--ctrl-h);height:var(--ctrl-h);aspect-ratio:1/1;border-radius:50%;object-fit:cover}
+header .header-nav{display:flex;align-items:center;justify-content:center;gap:20px;width:100%}
+header a.logout{display:inline-flex;align-items:center;height:var(--ctrl-h);padding:0 14px}
+
+.products{max-width:1180px;margin:0 auto;padding:40px 20px 56px}
+.intro{text-align:center;margin-bottom:32px}
+.intro h1{margin:0 0 8px;font-size:30px;color:var(--heading)}
+.intro p{margin:0;opacity:.85}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
+.card{background:var(--card);border-radius:12px;border-top:5px solid var(--purple);box-shadow:0 2px 10px rgba(0,0,0,.08);padding:26px;display:flex;flex-direction:column}
+.tag{align-self:flex-start;background:var(--grey-light);color:var(--purple);font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;margin-bottom:12px}
+.card h2{margin:0 0 10px;font-size:21px;color:var(--heading)}
+.card p{margin:0 0 20px;flex:1;font-size:15px}
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.plan{background:var(--grey-light);border:2px solid transparent;border-radius:8px;padding:10px 4px;text-align:center;cursor:pointer;font:inherit;color:inherit}
+.plan:hover{border-color:var(--yellow-dark)}
+.plan[aria-pressed="true"]{border-color:var(--purple);background:var(--card)}
+.plan small{display:block;font-size:12px;opacity:.8}
+.plan strong{display:block;font-size:15px;color:var(--heading)}
+.plan em{display:block;font-style:normal;font-size:11px;color:var(--purple);min-height:16px}
+.custom{display:none;background:var(--grey-light);border-radius:8px;padding:12px;margin-bottom:12px;font-size:14px}
+.custom.show{display:block}
+.custom .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper button{width:30px;height:30px;border:0;border-radius:6px;background:var(--purple);color:#fff;font-size:18px;cursor:pointer;line-height:1}
+.stepper button:hover{background:var(--purple-dark)}
+.stepper input{width:60px;height:30px;text-align:center;border:1px solid var(--yellow-dark);border-radius:6px;font:inherit;color:var(--text);background:var(--card)}
+.custom .total{margin-top:8px;font-size:13px}
+.custom .err{color:var(--error);font-size:12px;min-height:16px;margin-top:4px}
+.btn{background:var(--purple);color:#fff;border:0;border-radius:8px;padding:12px;font:inherit;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--purple-dark)}
+.msg{margin-top:10px;font-size:13px;min-height:18px;color:var(--purple)}
+@media (max-width:420px){.plans{grid-template-columns:1fr}}
+
+/* ===== Views, forms, details flow ===== */
+[hidden]{display:none!important}
+.narrow{max-width:780px;margin:0 auto;padding:40px 20px 56px}
+.narrow.auth{max-width:440px}
+.panel{background:var(--card);border-radius:12px;border-top:5px solid var(--purple);box-shadow:0 2px 10px rgba(0,0,0,.08);padding:28px}
+.panel h1{margin:0 0 6px;font-size:26px;color:var(--heading)}
+.panel .sub{margin:0 0 20px;opacity:.85;font-size:15px}
+.field{margin-bottom:14px}
+.field label{display:block;font-weight:600;font-size:14px;margin-bottom:4px;color:var(--heading)}
+.field input,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--yellow-dark);border-radius:8px;font:inherit;color:var(--text);background:#fff}
+.field input:focus,.field textarea:focus{outline:2px solid var(--purple);border-color:var(--purple)}
+.field textarea{min-height:84px;resize:vertical}
+.field .note{font-size:12px;color:var(--purple);margin-top:3px}
+.field .err{display:block;font-size:12px;color:var(--error);min-height:16px;margin-top:2px}
+.field.bad input,.field.bad textarea{border-color:var(--error)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+.summary{background:var(--grey-light);border-radius:8px;padding:14px 16px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.summary a,.panel .back{color:var(--purple);font-weight:600;text-decoration:none}
+.disc{margin:4px 0 18px}
+.disc label{display:flex;align-items:center;gap:10px;color:#9a9aa0;cursor:not-allowed;font-size:15px}
+.disc input{width:18px;height:18px;accent-color:#9a9aa0}
+.disc.on label{color:var(--black);cursor:pointer}
+.disc.on input{accent-color:var(--black)}
+.disc .note{font-size:12px;margin:3px 0 0 28px;color:#7d7d84}
+.panel .btn{width:100%}
+.formmsg{margin-top:10px;font-size:13px;color:var(--error);min-height:18px}
+.rec{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;margin:16px 0 22px;font-size:15px}
+.rec dt{font-weight:600;color:var(--heading)}
+.rec dd{margin:0;word-break:break-word}
+.userbox{display:flex;align-items:center;gap:12px;font-size:14px}
+header button{background:none;color:#fff;font:inherit;font-size:14px;border:1px solid rgba(255,255,255,.6);padding:6px 14px;border-radius:6px;cursor:pointer}
+header button:hover{background:var(--purple-dark)}
+@media (max-width:600px){.two{grid-template-columns:1fr}.rec{grid-template-columns:1fr}}
+
+.card .from{margin:-6px 0 16px;font-size:14px}
+.card .from strong{color:var(--heading)}
+.panel .back{display:inline-block;margin-bottom:14px;font-size:14px}
+.panel .tag{display:inline-block}
+.panel .plans{margin:18px 0 12px}
+.alt{margin-top:10px!important;font-size:14px}
+.alt a{color:var(--purple);font-weight:600;text-decoration:none}
+.alt a:hover{text-decoration:underline}
+
+/* ===== Your subscription + payment boxes ===== */
+.notice{background:#d9f2e0;color:#1e6b34;border-radius:8px;padding:12px 16px;margin-bottom:24px;text-align:center;font-weight:600}
+.mysubs{margin-bottom:36px}
+.sh{margin:0 0 14px;font-size:20px;color:var(--heading)}
+.subrow{display:grid;grid-template-columns:2fr 1fr;gap:24px;margin-bottom:24px}
+@media (max-width:760px){.subrow{grid-template-columns:1fr}}
+.subbox .meta{flex:none;line-height:1.7}
+.countdown{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:4px 0 8px}
+.countdown div{background:var(--grey-light);border-radius:8px;padding:10px 4px;text-align:center}
+.countdown b{display:block;font-size:24px;color:var(--heading);font-variant-numeric:tabular-nums}
+.countdown span{font-size:12px;opacity:.8}
+.countdown.over{display:block;background:var(--grey-light);border-radius:8px;padding:12px;text-align:center;font-weight:600}
+.cdnote{font-size:13px;opacity:.8}
+.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;margin-top:4px}
+.badge.pending{background:#fff3cd;color:#7a5b00}
+.badge.paid{background:#d9f2e0;color:#1e6b34}
+.btn:disabled{opacity:.6;cursor:default}
+.btn:disabled:hover{background:var(--purple)}
+.payamt{font-size:22px;font-weight:700;color:var(--heading)}
+.methods{display:grid;gap:8px;margin:0 0 14px}
+.method{display:flex;align-items:center;gap:10px;background:var(--grey-light);padding:12px 14px;border-radius:8px;cursor:pointer;font-size:15px}
+.method input{width:18px;height:18px;accent-color:var(--purple)}
+.demo{font-size:13px;background:#fff3cd;color:#7a5b00;border-radius:8px;padding:10px 14px;margin:0 0 16px}
+</style>
+</head>
+
+<body>
+
+<!-- Top bar: brand, logout, profile picture -->
+<header>
+  <span class="brand">BrightLoop Customer Portal</span>
+
+  <div class="header-right">
+    <!-- Logout goes to the sign-in page (change the file name here if yours is different) -->
+    <a class="logout" href="signin.html">logout</a>
+    <img src="assets/pfp.png" alt="Profile picture">
+  </div>
+</header>
+
+
+
+<!--
+  HOW THIS PAGE IS ORGANISED
+  Every product appears in three places, and each one carries the same data-product name:
+    1. the "Our Products" overview card   (data-product="...")
+    2. the "Choose a product" card        (data-product="...")
+    3. the plan page panel                (data-product="...")
+  The script reads prices straight from the 1 Year and 1 Month tiles, so edit the price text
+  right there. Prices are whole rupees written like ₹47,999.
+  The "Save %" labels and the "From ₹x / month" lines are plain text you edit by hand.
+-->
+
+<!-- 1. All products with plans (opens first) -->
+<main id="products" class="view products">
+  <section class="intro">
+    <h1>Our Products</h1>
+    <p>Business intelligence and software solutions, on a subscription that suits you.</p>
+    <p class="alt">Prefer to go step by step? <a href="#choose">Choose a product first →</a></p>
+  </section>
+
+  <!-- Appears after details are saved: subscription box (with countdown) and payment box -->
+  <div class="notice" id="notice" hidden></div>
+  <section class="mysubs" id="mySubs" hidden>
+    <h2 class="sh">Your subscription</h2>
+    <div id="subList"></div>
+  </section>
+
+  <section class="grid" id="gridAll">
+
+    <!-- Product: Data Analysis, Planning & BI -->
+    <article class="card" data-product="data-analysis">
+      <span class="tag">Business Intelligence</span>
+      <h2>Data Analysis, Planning &amp; BI</h2>
+      <p>Turn raw data into business insights and efficiencies through the BrightLoop Services page, with clear dashboards and planning support.</p>
+
+      <div class="plans">
+        <button class="plan" data-k="year" data-months="12" aria-pressed="true">
+          <small>1 Year</small>
+          <strong>₹47,999</strong>
+          <em>Save 20%</em>
+        </button>
+        <button class="plan" data-k="month" data-months="1" aria-pressed="false">
+          <small>1 Month</small>
+          <strong>₹4,999</strong>
+          <em></em>
+        </button>
+        <button class="plan" data-k="custom" aria-pressed="false">
+          <small>Custom</small>
+          <strong>Choose</strong>
+          <em>your timeline</em>
+        </button>
+      </div>
+
+      <div class="custom">
+        <div class="row">
+          <label>Subscription length (months)</label>
+          <div class="stepper">
+            <button type="button" data-d="-1" aria-label="Decrease">−</button>
+            <input type="number" min="1" max="60" value="3" inputmode="numeric">
+            <button type="button" data-d="1" aria-label="Increase">+</button>
+          </div>
+        </div>
+        <div class="total"></div>
+        <div class="err"></div>
+      </div>
+
+      <button class="btn">Subscribe</button>
+      <div class="msg" aria-live="polite"></div>
+    </article>
+
+    <!-- Product: Operational Processes -->
+    <article class="card" data-product="operational-processes">
+      <span class="tag">Operations</span>
+      <h2>Operational Processes</h2>
+      <p>We analyze your existing workflows and provide the tools, techniques and support to streamline how your operations run.</p>
+
+      <div class="plans">
+        <button class="plan" data-k="year" data-months="12" aria-pressed="true">
+          <small>1 Year</small>
+          <strong>₹57,999</strong>
+          <em>Save 19%</em>
+        </button>
+        <button class="plan" data-k="month" data-months="1" aria-pressed="false">
+          <small>1 Month</small>
+          <strong>₹5,999</strong>
+          <em></em>
+        </button>
+        <button class="plan" data-k="custom" aria-pressed="false">
+          <small>Custom</small>
+          <strong>Choose</strong>
+          <em>your timeline</em>
+        </button>
+      </div>
+
+      <div class="custom">
+        <div class="row">
+          <label>Subscription length (months)</label>
+          <div class="stepper">
+            <button type="button" data-d="-1" aria-label="Decrease">−</button>
+            <input type="number" min="1" max="60" value="3" inputmode="numeric">
+            <button type="button" data-d="1" aria-label="Increase">+</button>
+          </div>
+        </div>
+        <div class="total"></div>
+        <div class="err"></div>
+      </div>
+
+      <button class="btn">Subscribe</button>
+      <div class="msg" aria-live="polite"></div>
+    </article>
+
+    <!-- Product: Software Solutions -->
+    <article class="card" data-product="software-solutions">
+      <span class="tag">Custom Software</span>
+      <h2>Software Solutions</h2>
+      <p>Custom software development, including Business Process Automation and Warehouse Management systems built around your needs.</p>
+
+      <div class="plans">
+        <button class="plan" data-k="year" data-months="12" aria-pressed="true">
+          <small>1 Year</small>
+          <strong>₹99,999</strong>
+          <em>Save 17%</em>
+        </button>
+        <button class="plan" data-k="month" data-months="1" aria-pressed="false">
+          <small>1 Month</small>
+          <strong>₹9,999</strong>
+          <em></em>
+        </button>
+        <button class="plan" data-k="custom" aria-pressed="false">
+          <small>Custom</small>
+          <strong>Choose</strong>
+          <em>your timeline</em>
+        </button>
+      </div>
+
+      <div class="custom">
+        <div class="row">
+          <label>Subscription length (months)</label>
+          <div class="stepper">
+            <button type="button" data-d="-1" aria-label="Decrease">−</button>
+            <input type="number" min="1" max="60" value="3" inputmode="numeric">
+            <button type="button" data-d="1" aria-label="Increase">+</button>
+          </div>
+        </div>
+        <div class="total"></div>
+        <div class="err"></div>
+      </div>
+
+      <button class="btn">Subscribe</button>
+      <div class="msg" aria-live="polite"></div>
+    </article>
+
+  </section>
+</main>
+
+<!-- 1b. Step by step: choose the product -->
+<main id="choose" class="view products" hidden>
+  <section class="intro">
+    <h1>Choose a product</h1>
+    <p>Choose the product you want to subscribe to.</p>
+    <p class="alt"><a href="#products">← See all plans at once</a></p>
+  </section>
+
+  <section class="grid" id="gridChoose">
+
+    <article class="card" data-product="data-analysis">
+      <span class="tag">Business Intelligence</span>
+      <h2>Data Analysis, Planning &amp; BI</h2>
+      <p>Turn raw data into business insights and efficiencies through the BrightLoop Services page, with clear dashboards and planning support.</p>
+      <div class="from">From <strong>₹4,999</strong> / month</div>
+      <button class="btn">Select</button>
+    </article>
+
+    <article class="card" data-product="operational-processes">
+      <span class="tag">Operations</span>
+      <h2>Operational Processes</h2>
+      <p>We analyze your existing workflows and provide the tools, techniques and support to streamline how your operations run.</p>
+      <div class="from">From <strong>₹5,999</strong> / month</div>
+      <button class="btn">Select</button>
+    </article>
+
+    <article class="card" data-product="software-solutions">
+      <span class="tag">Custom Software</span>
+      <h2>Software Solutions</h2>
+      <p>Custom software development, including Business Process Automation and Warehouse Management systems built around your needs.</p>
+      <div class="from">From <strong>₹9,999</strong> / month</div>
+      <button class="btn">Select</button>
+    </article>
+
+  </section>
+</main>
+
+<!-- 2. Choose plan and length (one panel per product; only the chosen one is shown) -->
+<main id="plans" class="view narrow" hidden>
+
+  <!-- Plan page: Data Analysis, Planning & BI -->
+  <div class="panel plan-panel" data-product="data-analysis" hidden>
+    <a class="back" href="#choose">← Back to products</a>
+    <span class="tag">Business Intelligence</span>
+    <h1>Data Analysis, Planning &amp; BI</h1>
+    <p class="sub">Turn raw data into business insights and efficiencies through the BrightLoop Services page, with clear dashboards and planning support.</p>
+
+    <div class="plans">
+      <button class="plan" data-k="year" data-months="12" aria-pressed="true">
+        <small>1 Year</small>
+        <strong>₹47,999</strong>
+        <em>Save 20%</em>
+      </button>
+      <button class="plan" data-k="month" data-months="1" aria-pressed="false">
+        <small>1 Month</small>
+        <strong>₹4,999</strong>
+        <em></em>
+      </button>
+      <button class="plan" data-k="custom" aria-pressed="false">
+        <small>Custom</small>
+        <strong>Choose</strong>
+        <em>your timeline</em>
+      </button>
+    </div>
+
+    <div class="custom">
+      <div class="row">
+        <label for="months-data-analysis">Subscription length (months)</label>
+        <div class="stepper">
+          <button type="button" data-d="-1" aria-label="Decrease">−</button>
+          <input type="number" id="months-data-analysis" min="1" max="60" value="3" inputmode="numeric">
+          <button type="button" data-d="1" aria-label="Increase">+</button>
+        </div>
+      </div>
+      <div class="total"></div>
+      <div class="err"></div>
+    </div>
+
+    <button class="btn planContinue">Continue</button>
+    <div class="msg" aria-live="polite"></div>
+  </div>
+
+  <!-- Plan page: Operational Processes -->
+  <div class="panel plan-panel" data-product="operational-processes" hidden>
+    <a class="back" href="#choose">← Back to products</a>
+    <span class="tag">Operations</span>
+    <h1>Operational Processes</h1>
+    <p class="sub">We analyze your existing workflows and provide the tools, techniques and support to streamline how your operations run.</p>
+
+    <div class="plans">
+      <button class="plan" data-k="year" data-months="12" aria-pressed="true">
+        <small>1 Year</small>
+        <strong>₹57,999</strong>
+        <em>Save 19%</em>
+      </button>
+      <button class="plan" data-k="month" data-months="1" aria-pressed="false">
+        <small>1 Month</small>
+        <strong>₹5,999</strong>
+        <em></em>
+      </button>
+      <button class="plan" data-k="custom" aria-pressed="false">
+        <small>Custom</small>
+        <strong>Choose</strong>
+        <em>your timeline</em>
+      </button>
+    </div>
+
+    <div class="custom">
+      <div class="row">
+        <label for="months-operational-processes">Subscription length (months)</label>
+        <div class="stepper">
+          <button type="button" data-d="-1" aria-label="Decrease">−</button>
+          <input type="number" id="months-operational-processes" min="1" max="60" value="3" inputmode="numeric">
+          <button type="button" data-d="1" aria-label="Increase">+</button>
+        </div>
+      </div>
+      <div class="total"></div>
+      <div class="err"></div>
+    </div>
+
+    <button class="btn planContinue">Continue</button>
+    <div class="msg" aria-live="polite"></div>
+  </div>
+
+  <!-- Plan page: Software Solutions -->
+  <div class="panel plan-panel" data-product="software-solutions" hidden>
+    <a class="back" href="#choose">← Back to products</a>
+    <span class="tag">Custom Software</span>
+    <h1>Software Solutions</h1>
+    <p class="sub">Custom software development, including Business Process Automation and Warehouse Management systems built around your needs.</p>
+
+    <div class="plans">
+      <button class="plan" data-k="year" data-months="12" aria-pressed="true">
+        <small>1 Year</small>
+        <strong>₹99,999</strong>
+        <em>Save 17%</em>
+      </button>
+      <button class="plan" data-k="month" data-months="1" aria-pressed="false">
+        <small>1 Month</small>
+        <strong>₹9,999</strong>
+        <em></em>
+      </button>
+      <button class="plan" data-k="custom" aria-pressed="false">
+        <small>Custom</small>
+        <strong>Choose</strong>
+        <em>your timeline</em>
+      </button>
+    </div>
+
+    <div class="custom">
+      <div class="row">
+        <label for="months-software-solutions">Subscription length (months)</label>
+        <div class="stepper">
+          <button type="button" data-d="-1" aria-label="Decrease">−</button>
+          <input type="number" id="months-software-solutions" min="1" max="60" value="3" inputmode="numeric">
+          <button type="button" data-d="1" aria-label="Increase">+</button>
+        </div>
+      </div>
+      <div class="total"></div>
+      <div class="err"></div>
+    </div>
+
+    <button class="btn planContinue">Continue</button>
+    <div class="msg" aria-live="polite"></div>
+  </div>
+
+</main>
+
+<!-- 3. Subscription details -->
+<main id="details" class="view narrow" hidden>
+  <div class="panel">
+    <h1>Subscription details</h1>
+    <p class="sub">Tell us about your company to complete your subscription.</p>
+
+    <!-- The product and plan below are filled in from the choice made on the previous page -->
+    <div class="summary" id="sel">
+      <div><strong id="selProduct"></strong><br><span id="selPlan"></span></div>
+      <a id="selChange" href="#plans">Change</a>
+    </div>
+
+    <form id="detForm" novalidate>
+      <div class="two">
+        <div class="field"><label for="company">Company name</label><input id="company" autocomplete="organization"><span class="err"></span></div>
+        <div class="field"><label for="cname">Customer name</label><input id="cname" autocomplete="name"><span class="err"></span></div>
+      </div>
+      <div class="field"><label for="phone">Phone number</label><input id="phone" type="tel" autocomplete="tel"><span class="err"></span></div>
+      <div class="two">
+        <div class="field"><label for="cemail">Company email id</label><input id="cemail" type="email"><div class="note">Invoice will go to this mail id.</div><span class="err"></span></div>
+        <div class="field"><label for="pemail">Personal email id</label><input id="pemail" type="email" autocomplete="email"><span class="err"></span></div>
+      </div>
+      <div class="field"><label for="address">Company address</label><textarea id="address" autocomplete="street-address"></textarea><span class="err"></span></div>
+      <div class="field"><label for="emp">Number of employees in the company</label><input id="emp" type="number" min="1" inputmode="numeric"><span class="err"></span></div>
+      <div class="disc" id="discBox">
+        <label><input type="checkbox" id="disc" disabled> I’d like to apply for the volume discount</label>
+        <div class="note" id="discHint"></div>
+      </div>
+      <button class="btn" type="submit">Save details</button>
+      <div class="formmsg" id="formMsg" aria-live="polite"></div>
+    </form>
+  </div>
+</main>
+
+<!-- 4. Payment page (opened from the Make payment button) -->
+<main id="payment" class="view narrow" hidden>
+  <div class="panel">
+    <a class="back" href="#products">← Back to products</a>
+    <h1>Payment</h1>
+    <p class="sub">Choose how you would like to pay.</p>
+
+    <div class="summary">
+      <div><strong id="payProduct"></strong><br><span id="payPlan"></span></div>
+      <div class="payamt" id="payAmount"></div>
+    </div>
+
+    <div class="methods" role="radiogroup" aria-label="Payment method">
+      <label class="method"><input type="radio" name="pm" value="UPI" checked> UPI</label>
+      <label class="method"><input type="radio" name="pm" value="Card"> Debit / credit card</label>
+      <label class="method"><input type="radio" name="pm" value="Net banking"> Net banking</label>
+    </div>
+
+    <p class="demo">Demo payment page: no money is charged and no card details are collected. Connect your payment gateway here (or set PAYMENT_PAGE in the script) to take real payments.</p>
+
+    <button class="btn" id="payNow">Pay</button>
+    <div class="formmsg" id="payMsg" aria-live="polite"></div>
+  </div>
+</main>
+
+<script>
+/* BrightLoop – behaviour only. All content lives in the HTML above. */
+const $=s=>document.querySelector(s);
+const $$=s=>[...document.querySelectorAll(s)];
+const fmt=n=>"₹"+n.toLocaleString("en-IN");
+const num=t=>Number(String(t).replace(/[^\d]/g,""));   // "₹47,999" -> 47999
+const EMAIL=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const store={
+  get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},
+  del(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}}
+};
+let selection=store.get("bl_selection");
+let chosen=store.get("bl_product");   // the data-product name of the chosen product
+
+/* ---------- Subscriptions, countdown and payment ---------- */
+const PAYMENT_PAGE="";   // e.g. "payment.html" – leave empty to use the built-in demo payment page below
+let subs=store.get("bl_active")||[];   // saved subscriptions, newest first
+let payId=store.get("bl_pay");         // the subscription being paid for
+let pendingNotice="";
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dateText=iso=>new Date(iso).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
+const pad=n=>String(n).padStart(2,"0");
+function addMonths(d,m){                       // 31 Jan + 1 month = 28/29 Feb, not 3 Mar
+  const r=new Date(d),day=r.getDate();
+  r.setDate(1);r.setMonth(r.getMonth()+m);
+  r.setDate(Math.min(day,new Date(r.getFullYear(),r.getMonth()+1,0).getDate()));
+  return r;
+}
+const payable=()=>subs.find(s=>s.id===payId&&!s.paid);
+
+function startSubscription(rec){
+  subs.unshift({id:rec.id,product:rec.product,plan:rec.plan,months:rec.months,price:rec.price,
+    startedAt:rec.savedAt,endsAt:addMonths(new Date(rec.savedAt),rec.months).toISOString(),
+    paid:false,paidAt:null,method:null});
+  store.set("bl_active",subs);
+  pendingNotice="Your details have been saved. Your subscription and payment are shown below.";
+}
+
+function tick(){
+  $$(".countdown").forEach(el=>{
+    const diff=new Date(el.dataset.end)-Date.now();
+    if(diff<=0){el.classList.add("over");el.textContent="This subscription has ended.";return}
+    const v={d:Math.floor(diff/864e5),h:pad(Math.floor(diff%864e5/36e5)),m:pad(Math.floor(diff%36e5/6e4)),s:pad(Math.floor(diff%6e4/1e3))};
+    for(const u in v){const b=el.querySelector(`[data-u="${u}"]`);if(b)b.textContent=v[u]}
+  });
+}
+setInterval(tick,1000);
+
+function showProducts(){
+  const n=$("#notice");n.hidden=!pendingNotice;n.textContent=pendingNotice;pendingNotice="";
+  $("#mySubs").hidden=!subs.length;
+  $("#subList").innerHTML=subs.map(s=>`
+    <div class="subrow">
+      <article class="card subbox">
+        <span class="tag">Your subscription</span>
+        <h2>${esc(s.product)}</h2>
+        <p class="meta">Package: <strong>${esc(s.plan)}</strong> · ${fmt(s.price)}<br>Started ${dateText(s.startedAt)} · Ends ${dateText(s.endsAt)}<br>Reference ${esc(s.id)}</p>
+        <div class="countdown" data-end="${esc(s.endsAt)}">
+          <div><b data-u="d">0</b><span>days</span></div><div><b data-u="h">00</b><span>hours</span></div>
+          <div><b data-u="m">00</b><span>minutes</span></div><div><b data-u="s">00</b><span>seconds</span></div>
+        </div>
+        <div class="cdnote">Time left until your subscription ends</div>
+      </article>
+      <article class="card paybox">
+        <span class="tag">Payment</span>
+        <h2>${s.paid?"Payment received":"Payment due"}</h2>
+        <p>Amount: <strong>${fmt(s.price)}</strong><br><span class="badge ${s.paid?"paid":"pending"}">${s.paid?"Paid":"Pending"}</span>${s.paid?`<br><small>${dateText(s.paidAt)} · ${esc(s.method)}</small>`:""}</p>
+        ${s.paid?'<button class="btn" disabled>Paid ✓</button>':`<button class="btn payBtn" data-id="${esc(s.id)}">Make payment</button>`}
+      </article>
+    </div>`).join("");
+  tick();
+}
+$("#subList").addEventListener("click",e=>{
+  const b=e.target.closest(".payBtn");if(!b)return;
+  const s=subs.find(x=>x.id===b.dataset.id);if(!s)return;
+  if(PAYMENT_PAGE){location.href=`${PAYMENT_PAGE}?ref=${encodeURIComponent(s.id)}&amount=${s.price}`;return}
+  payId=s.id;store.set("bl_pay",payId);location.hash="payment";
+});
+function renderPayment(){
+  const s=payable();
+  $("#payProduct").textContent=s.product;
+  $("#payPlan").textContent=`${s.plan} · ${s.months} month${s.months>1?"s":""}`;
+  $("#payAmount").textContent=fmt(s.price);
+  $("#payNow").textContent=`Pay ${fmt(s.price)}`;
+  $("#payMsg").textContent="";
+  document.querySelector('input[name="pm"]').checked=true;
+}
+$("#payNow").addEventListener("click",()=>{
+  const s=payable();if(!s){location.hash="products";return}
+  s.paid=true;s.paidAt=new Date().toISOString();
+  s.method=document.querySelector('input[name="pm"]:checked').value;
+  store.set("bl_active",subs);store.del("bl_pay");payId=null;
+  pendingNotice=`Payment of ${fmt(s.price)} received via ${s.method}. Thank you!`;
+  location.hash="products";
+});
+
+/* ---------- Plan picker: 1 Year / 1 Month / Custom tiles + custom months ----------
+   Works on any element that contains .plan tiles and a .custom box
+   (an overview card or a plan page panel). Prices are read from the tiles. */
+function makePicker(root){
+  const tiles=[...root.querySelectorAll(".plan")];
+  const box=root.querySelector(".custom"),
+        input=box.querySelector("input"),
+        total=box.querySelector(".total"),
+        err=box.querySelector(".err"),
+        msg=root.querySelector(".msg");
+  const MIN=Number(input.min),MAX=Number(input.max);   // set min/max on the <input> in the HTML
+  const tile=k=>root.querySelector(`.plan[data-k="${k}"]`);
+  const monthPrice=()=>num(tile("month").querySelector("strong").textContent);
+  let sel="year";
+
+  const months=()=>{const v=parseInt(input.value,10);return Number.isFinite(v)&&v>=MIN&&v<=MAX?v:null};
+
+  function update(){
+    const m=months();
+    err.textContent=m||input.value===""?"":`Please choose between ${MIN} and ${MAX} months.`;
+    total.textContent=m?`${m} month${m>1?"s":""} × ${fmt(monthPrice())} = ${fmt(m*monthPrice())}`:"Enter the number of months.";
+  }
+
+  function choose(k){
+    sel=k;
+    tiles.forEach(t=>t.setAttribute("aria-pressed",t===tile(k)));
+    box.classList.toggle("show",k==="custom");
+    msg.textContent="";
+    update();
+  }
+
+  tiles.forEach(t=>t.addEventListener("click",()=>choose(t.dataset.k)));
+  box.querySelectorAll(".stepper button").forEach(b=>b.addEventListener("click",()=>{
+    const cur=parseInt(input.value,10)||MIN;
+    input.value=Math.min(MAX,Math.max(MIN,cur+(+b.dataset.d)));update();
+  }));
+  input.addEventListener("input",update);
+
+  update();
+  return {
+    msg,update,
+    selected:()=>sel,
+    // the chosen subscription, or null when a custom length is not valid
+    get(){
+      if(sel==="custom"){
+        const m=months();if(!m)return null;
+        return {months:m,label:`${m} month${m>1?"s":""} (custom)`,price:m*monthPrice()};
+      }
+      const t=tile(sel);
+      return {months:Number(t.dataset.months),label:t.querySelector("small").textContent.trim(),price:num(t.querySelector("strong").textContent)};
+    },
+    set(k,m){choose(k);if(k==="custom"&&m){input.value=m;update()}}
+  };
+}
+
+/* ---------- Plan pages (one per product) ---------- */
+const panelPickers={};
+$$(".plan-panel").forEach(panel=>{
+  const picker=makePicker(panel);
+  panelPickers[panel.dataset.product]=picker;
+  panel.querySelector(".planContinue").addEventListener("click",()=>{
+    const s=picker.get();
+    if(!s){picker.msg.textContent="Please enter a valid number of months.";return}
+    selection={product:panel.querySelector("h1").textContent.trim(),...s};
+    store.set("bl_selection",selection);
+    location.hash="details";
+  });
+});
+const valid=name=>typeof name==="string"&&!!panelPickers[name];
+
+/* ---------- Overview – every product with its plans; Subscribe goes straight to the details page ---------- */
+$$("#gridAll .card").forEach(card=>{
+  const name=card.dataset.product,picker=makePicker(card);
+  card.querySelector(".btn").addEventListener("click",()=>{
+    const s=picker.get();
+    if(!s){picker.msg.textContent="Please enter a valid number of months.";return}
+    selection={product:card.querySelector("h2").textContent.trim(),...s};
+    store.set("bl_selection",selection);
+    chosen=name;store.set("bl_product",name);
+    if(panelPickers[name])panelPickers[name].set(picker.selected(),s.months);   // carry the choice to the plan page
+    location.hash="details";
+  });
+});
+
+/* ---------- Step 1 – choose the product ---------- */
+$$("#gridChoose .card").forEach(card=>{
+  const name=card.dataset.product;
+  card.querySelector(".btn").addEventListener("click",()=>{
+    chosen=name;store.set("bl_product",name);
+    if(panelPickers[name])panelPickers[name].set("year");
+    location.hash="plans";
+  });
+});
+
+/* ---------- Routing ---------- */
+const views=["products","choose","plans","details","payment"];
+function showPlanPanel(){
+  $$(".plan-panel").forEach(p=>p.hidden=p.dataset.product!==chosen);
+  const picker=panelPickers[chosen];
+  picker.msg.textContent="";picker.update();
+}
+function route(){
+  let r=location.hash.slice(1)||"products";
+  if(!views.includes(r))r="products";
+  if(r==="plans"&&!valid(chosen))r="products";
+  if(r==="details"&&!selection)r=valid(chosen)?"plans":"products";
+  if(r==="payment"&&!payable())r="products";
+  if(location.hash!=="#"+r){try{history.replaceState(null,"","#"+r)}catch(e){location.hash=r}}   // replaceState is blocked inside some preview frames
+  views.forEach(v=>$("#"+v).hidden=v!==r);
+  if(r==="plans")showPlanPanel();
+  if(r==="details")renderSelection();
+  if(r==="products")showProducts();
+  if(r==="payment")renderPayment();
+  window.scrollTo(0,0);
+}
+window.addEventListener("hashchange",route);
+
+/* ---------- Field helpers ---------- */
+function check(rules,form){
+  let first=null;
+  for(const id in rules){
+    const el=$("#"+id),msg=rules[id](el.value),f=el.closest(".field");
+    f.classList.toggle("bad",!!msg);f.querySelector(".err").textContent=msg;
+    if(msg&&!first)first=el;
+  }
+  if(first)first.focus();
+  return !first;
+}
+document.addEventListener("input",e=>{
+  const f=e.target.closest&&e.target.closest(".field");
+  if(f){f.classList.remove("bad");f.querySelector(".err").textContent=""}
+});
+
+/* ---------- Details ---------- */
+function renderSelection(){
+  $("#selProduct").textContent=selection.product;
+  $("#selPlan").textContent=`${selection.label} · ${fmt(selection.price)}`;
+  $("#selChange").setAttribute("href",valid(chosen)?"#plans":"#products");
+}
+const emp=$("#emp"),disc=$("#disc");
+function syncDiscount(){
+  const ok=parseInt(emp.value,10)>25;
+  disc.disabled=!ok;if(!ok)disc.checked=false;
+  $("#discBox").classList.toggle("on",ok);
+  $("#discHint").textContent=ok?"You qualify for the volume discount. Tick the box if you want it.":"Available only for companies with more than 25 employees.";
+}
+emp.addEventListener("input",syncDiscount);syncDiscount();
+
+async function saveRecord(rec){
+  const all=store.get("bl_subscriptions")||[];all.push(rec);store.set("bl_subscriptions",all);
+}
+$("#detForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const ok=check({
+    company:v=>v.trim()?"":"Enter the company name.",
+    cname:v=>v.trim()?"":"Enter the customer name.",
+    phone:v=>/^\d{10,15}$/.test(v.replace(/[\s+\-()]/g,""))?"":"Enter a valid phone number (10–15 digits).",
+    cemail:v=>EMAIL.test(v.trim())?"":"Enter a valid company email id.",
+    pemail:v=>EMAIL.test(v.trim())?"":"Enter a valid personal email id.",
+    address:v=>v.trim().length>=8?"":"Enter the full company address.",
+    emp:v=>/^\d+$/.test(v.trim())&&+v>=1?"":"Enter the number of employees."
+  });
+  if(!ok)return;
+  const rec={id:"BL-"+Date.now().toString(36).toUpperCase(),savedAt:new Date().toISOString(),
+    product:selection.product,plan:selection.label,months:selection.months,price:selection.price,
+    company:$("#company").value.trim(),customer:$("#cname").value.trim(),phone:$("#phone").value.trim(),
+    companyEmail:$("#cemail").value.trim(),personalEmail:$("#pemail").value.trim(),
+    address:$("#address").value.trim(),employees:parseInt(emp.value,10),discountRequested:disc.checked};
+  try{
+    await saveRecord(rec);$("#formMsg").textContent="";
+    startSubscription(rec);
+    $("#detForm").reset();syncDiscount();
+    store.del("bl_selection");store.del("bl_product");selection=null;chosen=null;location.hash="products";
+  }catch(err){$("#formMsg").textContent="Sorry, we couldn’t save your details. Please try again."}
+});
+route();
+</script>
+</body>
+</html>

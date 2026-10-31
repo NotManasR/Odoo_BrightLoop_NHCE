@@ -6,7 +6,7 @@
 <title>Sign In</title>
 <style>
   :root {
-   --purple: #714B67;
+    --purple: #714B67;
     --purple-dark: #5a3a52;
     --yellow: #cbcbcb;
     --yellow-dark: #d1d1d1;
@@ -100,8 +100,8 @@
 
     <form id="loginForm" novalidate>
       <div class="field">
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" placeholder="Enter your username" autocomplete="username">
+        <label for="username">Username or Email</label>
+        <input type="text" id="username" name="username" placeholder="Enter your username or email" autocomplete="username">
         <div class="error" id="usernameError"></div>
       </div>
 
@@ -116,7 +116,7 @@
 
       <div class="row">
         <label style="margin:0;font-weight:400;"><input type="checkbox" id="remember" style="width:auto;margin-right:6px;">Remember me</label>
-        <a href="#">Forgot password?</a>
+        <a href="forgot-password.html">Forgot password?</a>
       </div>
 
       <button type="submit" class="submit" id="submitBtn">Sign In</button>
@@ -153,7 +153,7 @@
     password.classList.remove("invalid");
 
     if (username.value.trim().length < 3) {
-      usernameError.textContent = "Username must be at least 3 characters.";
+      usernameError.textContent = "Enter your username or email (at least 3 characters).";
       username.classList.add("invalid");
       valid = false;
     }
@@ -179,7 +179,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: username.value.trim(),
+          identifier: username.value.trim(), // username OR email
           password: password.value
         })
       });

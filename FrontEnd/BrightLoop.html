@@ -1,11 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>BrightLoop</title>
-    <style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>BrightLoop</title>
+<style>
+:root{
+  --purple:#714B67;--purple-dark:#5a3a52;--yellow:#f1c40f;--yellow-dark:#d1d1d1;
+  --grey:#4a4a4f;--grey-light:#e9e9ec;--bg:#e2e2e6;--white:#fff;--black:#000;--error:#c0392b;
+  --card:#fff;--text:#4a4a4f;--heading:#5a3a52;
+  --header-h:60px;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:"Segoe UI",Roboto,Arial,sans-serif;line-height:1.5;
+}
 
+<<<<<<< HEAD
     :root{
       --purple:#714B67;--purple-dark:#5a3a52;--yellow:#3d3737; --yellow-dark:#787373;
       --grey:#4a4a4f;--grey-light:#e9e9ec;--bg:#e2e2e6;--white:#ffffff;--black:#000000;--error:#c0392b;
@@ -13,136 +30,123 @@
       box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
       color-scheme:light;
     }
+=======
+/* ===== Header ===== */
+header{
+  position:sticky;top:0;z-index:10;height:var(--header-h);
+  background:var(--purple);color:#fff;
+  display:flex;justify-content:space-between;align-items:center;padding:0 28px;
+}
+header .brand{font-size:20px;font-weight:700;letter-spacing:.3px}
+header a{
+  color:#fff;text-decoration:none;font-size:14px;
+  border:1px solid rgba(255,255,255,.6);padding:6px 14px;border-radius:6px;
+  transition:background .3s ease-in-out;
+}
+header a:hover{background:var(--purple-dark)}
+>>>>>>> 534ce4e9ca4bae4de12abdee37d6d0f5bf3056e0
 
-    *{
-      box-sizing:border-box;transition:all .3s ease-in-out
-    }
+/* ===== Landing ===== */
+.landing{
+  min-height:calc(100vh - var(--header-h));
+  min-height:calc(100svh - var(--header-h));
+  padding:clamp(24px,8vh,80px) clamp(16px,10vw,15%);
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(45deg,var(--purple) 50%,var(--grey-light) 50%);
+}
+.landing .main{
+  display:flex;flex-direction:column;align-items:center;
+  width:100%;max-width:640px;
+  padding:clamp(32px,6vw,72px);
+  border-radius:10px;text-align:center;
+  background:var(--grey-light);box-shadow:0 0 15px var(--purple-dark);
+}
+.landing h1{color:var(--purple-dark);font-size:2rem;margin:0 0 20px}
+#start{
+  border:none;margin-top:20px;padding:14px 36px;border-radius:10px;
+  cursor:pointer;font-size:1.25rem;background:var(--white);color:var(--purple-dark);
+  transition:transform .3s ease-in-out,background-color .3s ease-in-out,box-shadow .3s ease-in-out,color .3s ease-in-out;
+}
+#start:hover{transform:scale(1.1);background:var(--bg);color:var(--black);box-shadow:0 0 15px var(--bg)}
+#start:active{transform:scale(.95);background:var(--yellow)}
 
-    html{
-      scroll-behavior:smooth
-    }
+/* ===== Products ===== */
+.products{max-width:1180px;margin:0 auto;padding:40px 20px 56px;scroll-margin-top:var(--header-h)}
+.intro{text-align:center;margin-bottom:32px}
+.intro h1{margin:0 0 8px;font-size:30px;color:var(--heading)}
+.intro p{margin:0;opacity:.85}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
 
-    body{
-      margin:0;
-      background:var(--bg);
-      color:var(--text);
-      font-family:"Segoe UI",Roboto,Arial,sans-serif;
-      line-height:1.5;
-    }
+.card{
+  background:var(--card);border-radius:12px;border-top:5px solid var(--purple);
+  box-shadow:0 2px 10px rgba(0,0,0,.08);padding:26px;display:flex;flex-direction:column;
+}
+.tag{
+  align-self:flex-start;background:var(--grey-light);color:var(--purple);
+  font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;margin-bottom:12px;
+}
+.card h2{margin:0 0 10px;font-size:21px;color:var(--heading)}
+.card p{margin:0 0 20px;flex:1;font-size:15px}
 
-    header{
-      position:sticky;
-      top:0;
-      z-index:10;
-      background:var(--purple);
-      color:#fff;display:flex;justify-content:space-between;align-items:center;padding:14px 28px}
-    header .brand{font-size:20px;font-weight:700;letter-spacing:.3px}
-    header a{color:#fff;text-decoration:none;font-size:14px;border:1px solid rgba(255,255,255,.6);padding:6px 14px;border-radius:6px}
-    header a:hover{background:var(--purple-dark)}
-    .products{max-width:1180px;margin:0 auto;padding:40px 20px 56px}
-    .intro{text-align:center;margin-bottom:32px}
-    .intro h1{margin:0 0 8px;font-size:30px;color:var(--heading)}
-    .intro p{margin:0;opacity:.85}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
-    .card{background:var(--card);border-radius:12px;border-top:5px solid var(--purple);box-shadow:0 2px 10px rgba(0,0,0,.08);padding:26px;display:flex;flex-direction:column}
-    .tag{align-self:flex-start;background:var(--grey-light);color:var(--purple);font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;margin-bottom:12px}
-    .card h2{margin:0 0 10px;font-size:21px;color:var(--heading)}
-    .card p{margin:0 0 20px;flex:1;font-size:15px}
-    .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
-    .plan{background:var(--grey-light);border:2px solid transparent;border-radius:8px;padding:10px 4px;text-align:center;cursor:pointer;font:inherit;color:inherit}
-    .plan:hover{border-color:var(--yellow-dark)}
-    .plan[aria-pressed="true"]{border-color:var(--purple);background:var(--card)}
-    .plan small{display:block;font-size:12px;opacity:.8}
-    .plan strong{display:block;font-size:15px;color:var(--heading)}
-    .plan em{display:block;font-style:normal;font-size:11px;color:var(--purple);min-height:16px}
-    .custom{display:none;background:var(--grey-light);border-radius:8px;padding:12px;margin-bottom:12px;font-size:14px}
-    .custom.show{display:block}
-    .custom .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-    .stepper{display:flex;align-items:center;gap:6px}
-    .stepper button{width:30px;height:30px;border:0;border-radius:6px;background:var(--purple);color:#fff;font-size:18px;cursor:pointer;line-height:1}
-    .stepper button:hover{background:var(--purple-dark)}
-    .stepper input{width:60px;height:30px;text-align:center;border:1px solid var(--yellow-dark);border-radius:6px;font:inherit;color:var(--text);background:var(--card)}
-    .custom .total{margin-top:8px;font-size:13px}
-    .custom .err{color:var(--error);font-size:12px;min-height:16px;margin-top:4px}
-    .btn{background:var(--purple);color:#fff;border:0;border-radius:8px;padding:12px;font:inherit;font-weight:600;cursor:pointer}
-    .btn:hover{background:var(--purple-dark)}
-    .msg{margin-top:10px;font-size:13px;min-height:18px;color:var(--purple)}
-    @media (max-width:420px){.plans{grid-template-columns:1fr}}
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.plan{
+  background:var(--grey-light);border:2px solid transparent;border-radius:8px;
+  padding:10px 4px;text-align:center;cursor:pointer;font:inherit;color:inherit;
+  transition:border-color .3s ease-in-out,background-color .3s ease-in-out;
+}
+.plan:hover{border-color:var(--yellow-dark)}
+.plan[aria-pressed="true"]{border-color:var(--purple);background:var(--card)}
+.plan small{display:block;font-size:12px;opacity:.8}
+.plan strong{display:block;font-size:15px;color:var(--heading)}
+.plan em{display:block;font-style:normal;font-size:11px;color:var(--purple);min-height:16px}
 
-    /* ===== Landing section ===== */
-    .landing{
-        min-height: calc(100vh - 60px);
-        padding: 8vh 15%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: linear-gradient(45deg, var(--purple) 50%, var(--grey-light) 50%);
+.custom{display:none;background:var(--grey-light);border-radius:8px;padding:12px;margin-bottom:12px;font-size:14px}
+.custom.show{display:block}
+.custom .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper button{
+  width:30px;height:30px;border:0;border-radius:6px;background:var(--purple);
+  color:#fff;font-size:18px;cursor:pointer;line-height:1;
+  transition:background-color .3s ease-in-out;
+}
+.stepper button:hover{background:var(--purple-dark)}
+.stepper input{
+  width:60px;height:30px;text-align:center;border:1px solid var(--yellow-dark);
+  border-radius:6px;font:inherit;color:var(--text);background:var(--card);
+}
+.custom .total{margin-top:8px;font-size:13px}
+.custom .err{color:var(--error);font-size:12px;min-height:16px;margin-top:4px}
 
-        .main{
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-            max-width: 640px;
-            padding: 12% 10%;
-            border-radius: 10px;
-            text-align: center;
-            background-color: var(--grey-light);
-            box-shadow: 0 0 15px var(--purple-dark);
+.btn{
+  background:var(--purple);color:#fff;border:0;border-radius:8px;padding:12px;
+  font:inherit;font-weight:600;cursor:pointer;transition:background-color .3s ease-in-out;
+}
+.btn:hover{background:var(--purple-dark)}
+.msg{margin-top:10px;font-size:13px;min-height:18px;color:var(--purple)}
 
-            h1{
-                color: var(--purple-dark);
-                font-size: 2rem;
-                margin: 0 0 20px;
-            }
-
-            button{
-                border: none;
-                margin-top: 20px;
-                padding: 5% 10%;
-                border-radius: 10px;
-                cursor: pointer;
-                font-size: 1.25rem;
-                background-color: var(--white);
-                color: var(--purple-dark);
-
-                &:hover{
-                    transform: scale(1.1);
-                    background-color: var(--bg);
-                    color: var(--black);
-                    box-shadow: 0 0 15px var(--bg);
-                }
-                &:active{
-                    transform: scale(0.9);
-                    background-color: var(--yellow);
-                }
-            }
-
-            &:hover{
-                transform: scale(1.1);
-            }
-        }
+@media (max-width:420px){
+  .plans{grid-template-columns:1fr}
+  header{padding:0 16px}
 }
 </style>
 </head>
-
 <body>
 
-    <header>
+<header>
   <span class="brand">BrightLoop</span>
-  <a href="#login">Login</a>
+  <a href="signin.html">Login</a>
 </header>
 
-    <!-- Landing (shown first) -->
-    <section class="landing">
-        <div class="main">
-            <h1>Welcome to BrightLoop</h1>
-            <button id="start">Start Now!</button>
-        </div>
-    </section>
+<!-- Landing (shown first) -->
+<section class="landing">
+  <div class="main">
+    <h1>Welcome to BrightLoop</h1>
+    <button id="start" type="button">Start Now!</button>
+  </div>
+</section>
 
-    <!-- Products (scroll down to see) -->
-    <main class="products" id="products">
+<!-- Products (scroll down to see) -->
+<main class="products" id="products">
   <section class="intro">
     <h1>Our Products</h1>
     <p>Business intelligence and software solutions, on a subscription that suits you.</p>
@@ -150,69 +154,118 @@
   <section class="grid" id="grid"></section>
 </main>
 
-    <script>
-const products=[
-  {tag:"Business Intelligence",name:"Data Analysis, Planning & BI",
+<script>
+// Where the Subscribe buttons send the user (change the file name if yours is different)
+const SIGNIN_URL = "signin.html";
+
+const products = [
+  {tag:"Business Intelligence", name:"Data Analysis, Planning & BI",
    desc:"Turn raw data into business insights and efficiencies through the BrightLoop Services page, with clear dashboards and planning support.",
-   month:4999,year:47999},
-  {tag:"Operations",name:"Operational Processes",
+   month:4999, year:47999},
+  {tag:"Operations", name:"Operational Processes",
    desc:"We analyze your existing workflows and provide the tools, techniques and support to streamline how your operations run.",
-   month:5999,year:57999},
-  {tag:"Custom Software",name:"Software Solutions",
+   month:5999, year:57999},
+  {tag:"Custom Software", name:"Software Solutions",
    desc:"Custom software development, including Business Process Automation and Warehouse Management systems built around your needs.",
-   month:9999,year:99999}
+   month:9999, year:99999}
 ];
-const MIN=1,MAX=60;
-const fmt=n=>"₹"+n.toLocaleString("en-IN");
-const grid=document.getElementById("grid");
-products.forEach(p=>{
-  const save=Math.round((1-p.year/(p.month*12))*100);
-  const card=document.createElement("article");card.className="card";
-  card.innerHTML=`<span class="tag">${p.tag}</span><h2>${p.name}</h2><p>${p.desc}</p>
+
+const MIN = 1, MAX = 60;
+const fmt = n => "₹" + n.toLocaleString("en-IN");
+const grid = document.getElementById("grid");
+
+products.forEach(p => {
+  const save = Math.round((1 - p.year / (p.month * 12)) * 100);
+  const card = document.createElement("article");
+  card.className = "card";
+  card.innerHTML = `
+    <span class="tag">${p.tag}</span>
+    <h2>${p.name}</h2>
+    <p>${p.desc}</p>
     <div class="plans">
-      <button class="plan" data-k="year" aria-pressed="true"><small>1 Year</small><strong>${fmt(p.year)}</strong><em>Save ${save}%</em></button>
-      <button class="plan" data-k="month" aria-pressed="false"><small>1 Month</small><strong>${fmt(p.month)}</strong><em></em></button>
-      <button class="plan" data-k="custom" aria-pressed="false"><small>Custom</small><strong>Choose</strong><em>your timeline</em></button>
+      <button type="button" class="plan" data-k="year" aria-pressed="true"><small>1 Year</small><strong>${fmt(p.year)}</strong><em>Save ${save}%</em></button>
+      <button type="button" class="plan" data-k="month" aria-pressed="false"><small>1 Month</small><strong>${fmt(p.month)}</strong><em></em></button>
+      <button type="button" class="plan" data-k="custom" aria-pressed="false"><small>Custom</small><strong>Choose</strong><em>your timeline</em></button>
     </div>
     <div class="custom">
-      <div class="row"><label>Subscription length (months)</label>
-        <div class="stepper"><button type="button" data-d="-1" aria-label="Decrease">−</button><input type="number" min="${MIN}" max="${MAX}" value="3" inputmode="numeric"><button type="button" data-d="1" aria-label="Increase">+</button></div>
+      <div class="row">
+        <label>Subscription length (months)</label>
+        <div class="stepper">
+          <button type="button" data-d="-1" aria-label="Decrease">−</button>
+          <input type="number" min="${MIN}" max="${MAX}" value="3" inputmode="numeric">
+          <button type="button" data-d="1" aria-label="Increase">+</button>
+        </div>
       </div>
-      <div class="total"></div><div class="err"></div>
+      <div class="total"></div>
+      <div class="err"></div>
     </div>
-    <button class="btn">Subscribe</button><div class="msg" aria-live="polite"></div>`;
-  let sel="year";
-  const panel=card.querySelector(".custom"),input=panel.querySelector("input"),
-        total=panel.querySelector(".total"),err=panel.querySelector(".err"),msg=card.querySelector(".msg");
-  const months=()=>{const v=parseInt(input.value,10);return Number.isFinite(v)?Math.min(MAX,Math.max(MIN,v)):null};
-  function update(){
-    const m=months();
-    if(input.value!==""&&(parseInt(input.value,10)<MIN||parseInt(input.value,10)>MAX))err.textContent=`Please choose between ${MIN} and ${MAX} months.`;else err.textContent="";
-    total.textContent=m?`${m} month${m>1?"s":""} × ${fmt(p.month)} = ${fmt(m*p.month)}`:"Enter the number of months.";
+    <button type="button" class="btn">Subscribe</button>
+    <div class="msg" aria-live="polite"></div>`;
+
+  let sel = "year";
+  const panel = card.querySelector(".custom");
+  const input = panel.querySelector("input");
+  const total = panel.querySelector(".total");
+  const err   = panel.querySelector(".err");
+  const msg   = card.querySelector(".msg");
+
+  // Returns a number clamped to MIN..MAX, or null if the field is empty/invalid
+  const months = () => {
+    const v = parseInt(input.value, 10);
+    return Number.isFinite(v) ? Math.min(MAX, Math.max(MIN, v)) : null;
+  };
+
+  function update() {
+    const raw = parseInt(input.value, 10);
+    const m = months();
+    err.textContent = (input.value !== "" && (raw < MIN || raw > MAX))
+      ? `Please choose between ${MIN} and ${MAX} months.` : "";
+    total.textContent = m
+      ? `${m} month${m > 1 ? "s" : ""} × ${fmt(p.month)} = ${fmt(m * p.month)}`
+      : "Enter the number of months.";
   }
-  card.querySelectorAll(".plan").forEach(b=>b.addEventListener("click",()=>{
-    sel=b.dataset.k;
-    card.querySelectorAll(".plan").forEach(x=>x.setAttribute("aria-pressed",x===b));
-    panel.classList.toggle("show",sel==="custom");
-    msg.textContent="";update();
+
+  card.querySelectorAll(".plan").forEach(b => b.addEventListener("click", () => {
+    sel = b.dataset.k;
+    card.querySelectorAll(".plan").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    panel.classList.toggle("show", sel === "custom");
+    msg.textContent = "";
+    update();
   }));
-  panel.querySelectorAll(".stepper button").forEach(b=>b.addEventListener("click",()=>{
-    const cur=parseInt(input.value,10)||MIN;
-    input.value=Math.min(MAX,Math.max(MIN,cur+(+b.dataset.d)));update();
+
+  panel.querySelectorAll(".stepper button").forEach(b => b.addEventListener("click", () => {
+    const cur = parseInt(input.value, 10) || MIN;
+    input.value = Math.min(MAX, Math.max(MIN, cur + Number(b.dataset.d)));
+    update();
   }));
-  input.addEventListener("input",update);
-  input.addEventListener("blur",()=>{const m=months();if(m)input.value=m;update()});
-  card.querySelector(".btn").addEventListener("click",()=>{
-    if(sel==="year")msg.textContent=`Selected: ${p.name} – 1 Year (${fmt(p.year)})`;
-    else if(sel==="month")msg.textContent=`Selected: ${p.name} – 1 Month (${fmt(p.month)})`;
-    else{const m=months();msg.textContent=m?`Selected: ${p.name} – ${m} month${m>1?"s":""} (${fmt(m*p.month)})`:"Please enter the number of months.";}
+
+  input.addEventListener("input", update);
+  input.addEventListener("blur", () => {
+    const m = months();
+    if (m) input.value = m;
+    update();
   });
+
+  // Subscribe -> sign-in page, carrying the chosen product and plan along
+  card.querySelector(".btn").addEventListener("click", () => {
+    const m = months();
+    if (sel === "custom" && !m) {
+      msg.textContent = "Please enter the number of months.";
+      return;
+    }
+    const params = new URLSearchParams({ product: p.name, plan: sel });
+    if (sel === "custom") params.set("months", m);
+    window.location.href = `${SIGNIN_URL}?${params.toString()}`;
+  });
+
   update();
   grid.appendChild(card);
 });
 
-document.getElementById("start").addEventListener("click",()=>{document.getElementById("products").scrollIntoView({behavior:"smooth"});});
-    </script>
+document.getElementById("start").addEventListener("click", () => {
+  document.getElementById("products").scrollIntoView({ behavior: "smooth" });
+});
+</script>
 
 </body>
 </html>
