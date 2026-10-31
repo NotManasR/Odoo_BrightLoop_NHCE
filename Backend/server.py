@@ -4,6 +4,7 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import psycopg2
+import psycopg2.errors
 from psycopg2.extras import RealDictCursor
 import datetime
 import os
@@ -12,7 +13,7 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# Secret key used to sign password-reset tokens
+# Secret key used to sign login and password-reset tokens
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-me')
 serializer = URLSafeTimedSerializer(app.secret_key)
 
@@ -20,6 +21,15 @@ serializer = URLSafeTimedSerializer(app.secret_key)
 DATABASE_URL = os.environ.get(
     'DATABASE_URL',
     'postgresql://postgres:postgres@localhost:5432/brightloop'
+)
+
+# scrypt (the default) is missing from some Python builds (e.g. macOS 3.9),
+# so every password in this project is hashed with pbkdf2.
+HASH_METHOD = 'pbkdf2:sha256'
+
+PASSWORD_RULES_MESSAGE = (
+    "Password must be more than 8 characters with an uppercase letter, "
+    "a lowercase letter and a special character"
 )
 
 
@@ -31,8 +41,21 @@ def get_db():
     return conn
 
 
+def hash_password(password):
+    return generate_password_hash(password, method=HASH_METHOD)
+
+
+def password_is_strong(password):
+    return not (
+        len(password) <= 8
+        or not re.search(r'[A-Z]', password)
+        or not re.search(r'[a-z]', password)
+        or not re.search(r'[^A-Za-z0-9]', password)
+    )
+
+
 # ============================================================
-# 0. SIGNUP
+# 0. SIGNUP & LOGIN
 # ============================================================
 
 @app.route('/api/signup', methods=['POST'])
@@ -47,13 +70,10 @@ def signup():
         return jsonify({"error": "Username must be at least 3 characters"}), 400
     if not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
         return jsonify({"error": "Enter a valid email address"}), 400
-    if (len(password) <= 8
-            or not re.search(r'[A-Z]', password)
-            or not re.search(r'[a-z]', password)
-            or not re.search(r'[^A-Za-z0-9]', password)):
-        return jsonify({"error": "Password must be more than 8 characters with an uppercase letter, a lowercase letter and a special character"}), 400
+    if not password_is_strong(password):
+        return jsonify({"error": PASSWORD_RULES_MESSAGE}), 400
 
-    password_hash = generate_password_hash(password,method='pbkdf2:sha256')
+    password_hash = hash_password(password)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -75,11 +95,16 @@ def signup():
         conn.close()
 
     return jsonify(user), 201
+
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json or {}
 
-    identifier = (data.get('username') or data.get('email') or '').strip()
+    # The page may send the field as identifier, username or email
+    identifier = (
+        data.get('identifier') or data.get('username') or data.get('email') or ''
+    ).strip()
     password = data.get('password') or ''
 
     if not identifier or not password:
@@ -138,14 +163,16 @@ def forgot_password():
 
     # Token is valid for 1 hour (checked when it is used)
     token = serializer.dumps(email, salt='password-reset-salt')
-    reset_url = f"{request.host_url}reset_password.html?token={token}"
+    reset_url = f"{request.host_url}reset-password.html?token={token}"
 
     # In production, send via SMTP. For local testing/demo, print to console
     print(f"[RESET LINK FOR {email}]: {reset_url}")
 
+    # The token is returned so the demo page can open its own reset page
     return jsonify({
         "message": "Password reset link sent to registered email",
-        "reset_url": reset_url
+        "reset_url": reset_url,
+        "token": token
     }), 200
 
 
@@ -158,11 +185,8 @@ def reset_password():
     if not token or not new_password:
         return jsonify({"error": "Token and new password are required"}), 400
 
-    if (len(new_password) <= 8
-            or not re.search(r'[A-Z]', new_password)
-            or not re.search(r'[a-z]', new_password)
-            or not re.search(r'[^A-Za-z0-9]', new_password)):
-        return jsonify({"error": "Password must be more than 8 characters with an uppercase letter, a lowercase letter and a special character"}), 400
+    if not password_is_strong(new_password):
+        return jsonify({"error": PASSWORD_RULES_MESSAGE}), 400
 
     try:
         email = serializer.loads(token, salt='password-reset-salt', max_age=3600)
@@ -171,7 +195,7 @@ def reset_password():
     except BadSignature:
         return jsonify({"error": "Invalid reset token"}), 400
 
-    password_hash = generate_password_hash(new_password)
+    password_hash = hash_password(new_password)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -355,7 +379,17 @@ def create_quote():
 
 # ============================================================
 # 4. STATE MACHINE TRANSITION
+# Draft -> Quotation -> Confirmed -> Active -> Closed
 # ============================================================
+
+SUBSCRIPTION_FLOW = {
+    'Draft': ['Quotation'],
+    'Quotation': ['Confirmed'],
+    'Confirmed': ['Active'],
+    'Active': ['Closed'],
+    'Closed': [],
+}
+
 
 @app.route('/api/subscriptions/transition', methods=['POST'])
 def transition_subscription():
@@ -366,6 +400,21 @@ def transition_subscription():
 
     conn = get_db()
     cursor = conn.cursor()
+
+    cursor.execute("SELECT status FROM subscriptions WHERE id = %s", (sub_id,))
+    sub = cursor.fetchone()
+
+    if not sub:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Subscription not found"}), 404
+
+    if new_status not in SUBSCRIPTION_FLOW.get(sub['status'], []):
+        cursor.close()
+        conn.close()
+        return jsonify({
+            "error": f"Cannot move from {sub['status']} to {new_status}"
+        }), 400
 
     cursor.execute(
         "UPDATE subscriptions SET status = %s WHERE id = %s",
@@ -564,15 +613,33 @@ def pay_invoice():
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT total_amount FROM invoices WHERE id = %s",
+        "SELECT total_amount, status FROM invoices WHERE id = %s",
         (inv_id,)
     )
 
     inv = cursor.fetchone()
 
-    amount = data.get('amount') or (
-        float(inv['total_amount']) if inv else 0.0
-    )
+    if not inv:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Invoice not found"}), 404
+
+    if inv['status'] == 'Paid':
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Invoice is already paid"}), 400
+
+    try:
+        amount = float(data.get('amount') or inv['total_amount'])
+    except (TypeError, ValueError):
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Amount must be a number"}), 400
+
+    if amount <= 0:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Amount must be greater than zero"}), 400
 
     cursor.execute("""
         INSERT INTO payments (
@@ -699,6 +766,184 @@ def create_product():
     conn.close()
 
     return jsonify(product), 201
+
+
+# ============================================================
+# 10. ADMIN CATALOG & RULE MANAGEMENT
+# ============================================================
+
+def _none_if_empty(value):
+    """Turn empty strings into None so DATE/INT columns accept them."""
+    return None if value in ('', None) else value
+
+
+def _pick(data, *keys, default=None):
+    """Return the first key present in the request body (supports aliases)."""
+    for key in keys:
+        if key in data:
+            return data[key]
+    return default
+
+
+def _admin_list(table):
+    # `table` is always a fixed name from this file, never user input
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT * FROM {table} ORDER BY id DESC")
+    rows = [dict(row) for row in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+    return jsonify(rows), 200
+
+
+def _admin_insert(query, params, label):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(query, params)
+        new_id = cursor.fetchone()['id']
+        conn.commit()
+    except (psycopg2.errors.CheckViolation,
+            psycopg2.errors.NotNullViolation,
+            psycopg2.errors.ForeignKeyViolation,
+            psycopg2.DataError):
+        conn.rollback()
+        return jsonify({"error": f"Invalid data for {label.lower()}"}), 400
+    finally:
+        cursor.close()
+        conn.close()
+    return jsonify({"message": f"{label} created", "id": new_id}), 201
+
+
+@app.route('/api/admin/products', methods=['GET', 'POST'])
+def manage_products():
+    if request.method == 'GET':
+        return _admin_list('products')
+
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "Product name is required"}), 400
+
+    return _admin_insert("""
+        INSERT INTO products (name, type, sales_price, cost_price, notes)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        name,
+        data.get('type', 'Service'),
+        data.get('sales_price', 0),
+        _none_if_empty(data.get('cost_price', 0)),
+        data.get('notes', '')
+    ), "Product")
+
+
+@app.route('/api/admin/product-variants', methods=['POST'])
+def create_product_variant():
+    data = request.json or {}
+    variant_name = (data.get('variant_name') or '').strip()
+
+    if not data.get('product_id') or not variant_name:
+        return jsonify({"error": "product_id and variant_name are required"}), 400
+
+    return _admin_insert("""
+        INSERT INTO product_variants (product_id, variant_name, extra_price)
+        VALUES (%s, %s, %s)
+        RETURNING id
+    """, (
+        data.get('product_id'),
+        variant_name,
+        data.get('extra_price', 0)
+    ), "Variant")
+
+
+@app.route('/api/admin/plans', methods=['GET', 'POST'])
+def manage_plans():
+    if request.method == 'GET':
+        return _admin_list('plans')
+
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "Plan name is required"}), 400
+
+    # Database only allows: Daily, Weekly, Monthly, Yearly
+    billing_period = str(data.get('billing_period', 'Monthly')).strip().capitalize()
+    if billing_period not in ('Daily', 'Weekly', 'Monthly', 'Yearly'):
+        return jsonify({
+            "error": "billing_period must be Daily, Weekly, Monthly or Yearly"
+        }), 400
+
+    return _admin_insert("""
+        INSERT INTO plans (
+            name, price, billing_period, min_quantity,
+            available_start_date, available_end_date,
+            is_closable, is_pausable, is_renewable
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        name,
+        data.get('price', 0),
+        billing_period,
+        data.get('min_quantity', 1),
+        _none_if_empty(_pick(data, 'available_start_date', 'start_date')),
+        _none_if_empty(_pick(data, 'available_end_date', 'end_date')),
+        _pick(data, 'is_closable', 'closable_flag', default=True),
+        _pick(data, 'is_pausable', 'pausable_flag', default=True),
+        _pick(data, 'is_renewable', 'renewable_flag', default=True)
+    ), "Plan")
+
+
+@app.route('/api/admin/taxes', methods=['GET', 'POST'])
+def manage_taxes():
+    if request.method == 'GET':
+        return _admin_list('taxes')
+
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "Tax name is required"}), 400
+
+    return _admin_insert("""
+        INSERT INTO taxes (name, percentage)
+        VALUES (%s, %s)
+        RETURNING id
+    """, (name, data.get('percentage', 0)), "Tax rule")
+
+
+@app.route('/api/admin/discounts', methods=['GET', 'POST'])
+def manage_discounts():
+    if request.method == 'GET':
+        return _admin_list('discounts')
+
+    data = request.json or {}
+
+    # Database only allows: fixed, percent ("percentage" is accepted as an alias)
+    discount_type = str(data.get('discount_type', 'percent')).strip().lower()
+    if discount_type == 'percentage':
+        discount_type = 'percent'
+    if discount_type not in ('fixed', 'percent'):
+        return jsonify({"error": "discount_type must be 'fixed' or 'percent'"}), 400
+
+    # Note: the discounts table has no `name` column, so any name is ignored
+    return _admin_insert("""
+        INSERT INTO discounts (
+            product_id, discount_type, discount_value, min_purchase,
+            min_quantity, start_date, end_date, usage_limit
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        _none_if_empty(data.get('product_id')),
+        discount_type,
+        _pick(data, 'discount_value', 'value', default=0),
+        _pick(data, 'min_purchase', 'min_amount', default=0),
+        data.get('min_quantity', 0),
+        _none_if_empty(data.get('start_date')),
+        _none_if_empty(data.get('end_date')),
+        _none_if_empty(data.get('usage_limit'))
+    ), "Discount rule")
 
 
 # ============================================================
