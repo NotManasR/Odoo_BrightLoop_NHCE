@@ -1,4 +1,3 @@
-
 import os
 import psycopg2
 
@@ -14,6 +13,7 @@ SQL_SCRIPT = """
 -- 1. Users
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL
@@ -138,12 +138,12 @@ CREATE TABLE IF NOT EXISTS payments (
 -- SEED INITIAL MOCK DATA
 -- ===================================
 
-INSERT INTO users (id, email, password_hash, role)
+INSERT INTO users (id, name, email, password_hash, role)
 VALUES
-    (1, 'admin@brightloop.com', 'pwd_admin', 'Admin'),
-    (2, 'staff@brightloop.com', 'pwd_staff', 'Staff'),
-    (3, 'procurement@shell.com', 'pwd_shell', 'Customer'),
-    (4, 'accounts@infosys.com', 'pwd_infosys', 'Customer')
+    (1, 'System Admin', 'admin@brightloop.com', 'pwd_admin', 'Admin'),
+    (2, 'Internal Staff', 'staff@brightloop.com', 'pwd_staff', 'Staff'),
+    (3, 'Shell Procurement', 'procurement@shell.com', 'pwd_shell', 'Customer'),
+    (4, 'Infosys Accounts', 'accounts@infosys.com', 'pwd_infosys', 'Customer')
 ON CONFLICT (email) DO NOTHING;
 
 

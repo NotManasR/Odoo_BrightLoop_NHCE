@@ -25,7 +25,44 @@ def get_db():
     )
     return conn
 
+@app.route('/api/signup', methods=['POST'])
+def signup():
+    data = request.json or {}
 
+    name = (data.get('username') or '').strip()
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+
+    if len(name) < 3:
+        return jsonify({"error": "Username must be at least 3 characters"}), 400
+    if not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+        return jsonify({"error": "Enter a valid email address"}), 400
+    if (len(password) <= 8
+            or not re.search(r'[A-Z]', password)
+            or not re.search(r'[a-z]', password)
+            or not re.search(r'[^A-Za-z0-9]', password)):
+        return jsonify({"error": "Password must be more than 8 characters with an uppercase letter, a lowercase letter and a special character"}), 400
+
+    password_hash = generate_password_hash(password)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO users (name, email, password_hash, role)
+            VALUES (%s, %s, %s, 'Customer')
+            RETURNING id, name, email, role
+        """, (name, email, password_hash))
+        user = cursor.fetchone()
+        conn.commit()
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        return jsonify({"error": "An account with this email already exists"}), 409
+    finally:
+        cursor.close()
+        conn.close()
+
+    return jsonify(user), 201
 # ============================================================
 # 1. GET PRODUCTS & VARIANTS
 # ============================================================
