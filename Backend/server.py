@@ -1,5 +1,6 @@
 import re
 from werkzeug.security import generate_password_hash
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import psycopg2
@@ -10,6 +11,10 @@ import os
 
 app = Flask(__name__)
 CORS(app)
+
+# Secret key used to sign password-reset tokens
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-me')
+serializer = URLSafeTimedSerializer(app.secret_key)
 
 
 DATABASE_URL = os.environ.get(
@@ -70,6 +75,84 @@ def signup():
         conn.close()
 
     return jsonify(user), 201
+
+
+# ============================================================
+# PASSWORD RESET
+# ============================================================
+
+@app.route('/api/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, email FROM users WHERE email = %s", (email,))
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not user:
+        return jsonify({
+            "message": "If an account exists with that email, a reset link has been sent."
+        }), 200
+
+    # Token is valid for 1 hour (checked when it is used)
+    token = serializer.dumps(email, salt='password-reset-salt')
+    reset_url = f"{request.host_url}reset_password.html?token={token}"
+
+    # In production, send via SMTP. For local testing/demo, print to console
+    print(f"[RESET LINK FOR {email}]: {reset_url}")
+
+    return jsonify({
+        "message": "Password reset link sent to registered email",
+        "reset_url": reset_url
+    }), 200
+
+
+@app.route('/api/reset-password', methods=['POST'])
+def reset_password():
+    data = request.json or {}
+    token = data.get('token')
+    new_password = data.get('password') or ''
+
+    if not token or not new_password:
+        return jsonify({"error": "Token and new password are required"}), 400
+
+    if (len(new_password) <= 8
+            or not re.search(r'[A-Z]', new_password)
+            or not re.search(r'[a-z]', new_password)
+            or not re.search(r'[^A-Za-z0-9]', new_password)):
+        return jsonify({"error": "Password must be more than 8 characters with an uppercase letter, a lowercase letter and a special character"}), 400
+
+    try:
+        email = serializer.loads(token, salt='password-reset-salt', max_age=3600)
+    except SignatureExpired:
+        return jsonify({"error": "The reset link has expired"}), 400
+    except BadSignature:
+        return jsonify({"error": "Invalid reset token"}), 400
+
+    password_hash = generate_password_hash(new_password)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET password_hash = %s WHERE email = %s RETURNING id",
+        (password_hash, email)
+    )
+    updated_user = cursor.fetchone()
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    if not updated_user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({"message": "Password updated successfully"}), 200
 
 
 # ============================================================
