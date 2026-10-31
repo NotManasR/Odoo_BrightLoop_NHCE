@@ -225,15 +225,24 @@ def get_products():
 
 
 # ============================================================
-# 2. GET SUBSCRIPTIONS & LINE ITEMS
+# 2. GET SUBSCRIPTIONS & LINE ITEMS (role-aware)
 # ============================================================
 
 @app.route('/api/subscriptions', methods=['GET'])
 def get_subscriptions():
+    role = request.headers.get('X-User-Role', 'Customer')
+    user_id = request.headers.get('X-User-Id')
+
+    is_staff = role in ['Admin', 'Staff']
+
+    # A customer without a valid numeric ID sees nothing
+    if not is_staff and not (user_id and user_id.isdigit()):
+        return jsonify([]), 200
+
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    base_query = """
         SELECT
             s.*,
             u.email AS customer_email,
@@ -241,7 +250,17 @@ def get_subscriptions():
         FROM subscriptions s
         JOIN users u ON s.customer_id = u.id
         LEFT JOIN plans p ON s.plan_id = p.id
-    """)
+    """
+
+    if is_staff:
+        # Admins & Staff see all subscriptions
+        cursor.execute(base_query + " ORDER BY s.id DESC")
+    else:
+        # Customers ONLY see subscriptions assigned to their customer ID
+        cursor.execute(
+            base_query + " WHERE s.customer_id = %s ORDER BY s.id DESC",
+            (int(user_id),)
+        )
 
     subs = cursor.fetchall()
 
@@ -270,7 +289,7 @@ def get_subscriptions():
     cursor.close()
     conn.close()
 
-    return jsonify(result)
+    return jsonify(result), 200
 
 
 # ============================================================
@@ -489,30 +508,45 @@ def run_billing():
 
 
 # ============================================================
-# 6. GET INVOICES LIST
+# 6. GET INVOICES LIST (role-aware)
 # ============================================================
 
 @app.route('/api/invoices', methods=['GET'])
 def get_invoices():
+    role = request.headers.get('X-User-Role', 'Customer')
+    user_id = request.headers.get('X-User-Id')
+
+    is_staff = role in ['Admin', 'Staff']
+
+    # A customer without a valid numeric ID sees nothing
+    if not is_staff and not (user_id and user_id.isdigit()):
+        return jsonify([]), 200
+
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    base_query = """
         SELECT
             i.*,
             u.email AS customer_email
         FROM invoices i
         JOIN users u ON i.customer_id = u.id
-    """)
+    """
 
-    invoices = cursor.fetchall()
+    if is_staff:
+        cursor.execute(base_query + " ORDER BY i.id DESC")
+    else:
+        cursor.execute(
+            base_query + " WHERE i.customer_id = %s ORDER BY i.id DESC",
+            (int(user_id),)
+        )
+
+    invoices = [dict(row) for row in cursor.fetchall()]
 
     cursor.close()
     conn.close()
 
-    return jsonify([
-        dict(inv) for inv in invoices
-    ])
+    return jsonify(invoices), 200
 
 
 # ============================================================
