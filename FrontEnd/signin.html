@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign In</title>
+<style>
+  :root {
+   --purple: #714B67;
+    --purple-dark: #5a3a52;
+    --yellow: #cbcbcb;
+    --yellow-dark: #d1d1d1;
+    --grey: #4a4a4f;
+    --grey-light: #e9e9ec;
+    --bg: #f4f2f4;
+    --error: #c0392b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Roboto, Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--purple) 0%, var(--purple) 55%, var(--yellow) 55%, var(--yellow) 100%);
+    padding: 20px;
+  }
+  .card {
+    background: #fff;
+    width: 100%;
+    max-width: 400px;
+    border-radius: 12px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, .25);
+    overflow: hidden;
+  }
+  .card-header {
+    background: var(--grey);
+    border-bottom: 5px solid var(--yellow);
+    color: #fff;
+    text-align: center;
+    padding: 28px 20px;
+  }
+  .card-header h1 { font-size: 1.6rem; letter-spacing: .5px; }
+  .card-header p { color: var(--grey-light); font-size: .9rem; margin-top: 6px; }
+  form { padding: 28px; }
+  .field { margin-bottom: 18px; }
+  label { display: block; font-size: .85rem; font-weight: 600; color: var(--grey); margin-bottom: 6px; }
+  .input-wrap { position: relative; }
+  input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1.5px solid #cfcfd4;
+    border-radius: 8px;
+    font-size: 1rem;
+    color: var(--grey);
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(113, 75, 103, .2); }
+  input.invalid { border-color: var(--error); }
+  .toggle {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--purple);
+    font-size: .8rem; font-weight: 600; cursor: pointer;
+  }
+  .error { color: var(--error); font-size: .8rem; margin-top: 5px; min-height: 1em; }
+  .row { display: flex; justify-content: space-between; align-items: center; font-size: .85rem; margin-bottom: 20px; color: var(--grey); }
+  .row a { color: var(--purple); text-decoration: none; font-weight: 600; }
+  .row a:hover { text-decoration: underline; }
+  button.submit {
+    width: 100%;
+    padding: 13px;
+    background: var(--purple);
+    color: #fff;
+    border: none;
+    border-bottom: 4px solid var(--yellow);
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s, transform .1s;
+  }
+  button.submit:hover { background: var(--purple-dark); }
+  button.submit:active { transform: translateY(1px); }
+  button.submit:disabled { opacity: .7; cursor: not-allowed; }
+  .message { text-align: center; margin-top: 16px; font-size: .9rem; min-height: 1.2em; }
+  .message.ok { color: #2e7d32; }
+  .message.fail { color: var(--error); }
+  .switch { text-align: center; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--grey-light); font-size: .9rem; color: var(--grey); }
+  .switch a { color: var(--purple); font-weight: 600; text-decoration: none; }
+  .switch a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-header">
+      <h1>Welcome Back</h1>
+      <p>Sign in to your account</p>
+    </div>
+
+    <form id="loginForm" novalidate>
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" placeholder="Enter your username" autocomplete="username">
+        <div class="error" id="usernameError"></div>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="input-wrap">
+          <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password">
+          <button type="button" class="toggle" id="togglePw">Show</button>
+        </div>
+        <div class="error" id="passwordError"></div>
+      </div>
+
+      <div class="row">
+        <label style="margin:0;font-weight:400;"><input type="checkbox" id="remember" style="width:auto;margin-right:6px;">Remember me</label>
+        <a href="#">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="submit" id="submitBtn">Sign In</button>
+      <div class="message" id="message"></div>
+
+      <div class="switch">Don't have an account? <a href="signup.html">Sign up</a></div>
+    </form>
+  </div>
+
+<script>
+  // Change this to your backend sign-in endpoint (e.g. a FastAPI route)
+  const API_URL = "http://127.0.0.1:8000/login";
+
+  const form = document.getElementById("loginForm");
+  const username = document.getElementById("username");
+  const password = document.getElementById("password");
+  const usernameError = document.getElementById("usernameError");
+  const passwordError = document.getElementById("passwordError");
+  const message = document.getElementById("message");
+  const submitBtn = document.getElementById("submitBtn");
+  const togglePw = document.getElementById("togglePw");
+
+  togglePw.addEventListener("click", () => {
+    const show = password.type === "password";
+    password.type = show ? "text" : "password";
+    togglePw.textContent = show ? "Hide" : "Show";
+  });
+
+  function validate() {
+    let valid = true;
+    usernameError.textContent = "";
+    passwordError.textContent = "";
+    username.classList.remove("invalid");
+    password.classList.remove("invalid");
+
+    if (username.value.trim().length < 3) {
+      usernameError.textContent = "Username must be at least 3 characters.";
+      username.classList.add("invalid");
+      valid = false;
+    }
+    if (password.value.length < 6) {
+      passwordError.textContent = "Password must be at least 6 characters.";
+      password.classList.add("invalid");
+      valid = false;
+    }
+    return valid;
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    message.textContent = "";
+    message.className = "message";
+    if (!validate()) return;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Signing in...";
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: username.value.trim(),
+          password: password.value
+        })
+      });
+
+      if (!res.ok) throw new Error("Invalid username or password.");
+
+      const data = await res.json();
+      message.textContent = "Sign in successful!";
+      message.classList.add("ok");
+      console.log(data);
+      // window.location.href = "dashboard.html";
+    } catch (err) {
+      message.textContent = err.message || "Something went wrong. Try again.";
+      message.classList.add("fail");
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Sign In";
+    }
+  });
+</script>
+</body>
+</html>
