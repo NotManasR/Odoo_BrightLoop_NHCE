@@ -43,7 +43,7 @@ def signup():
             or not re.search(r'[^A-Za-z0-9]', password)):
         return jsonify({"error": "Password must be more than 8 characters with an uppercase letter, a lowercase letter and a special character"}), 400
 
-    password_hash = generate_password_hash(password)
+    password_hash = generate_password_hash(password,method='pbkdf2:sha256')
 
     conn = get_db()
     cursor = conn.cursor()
